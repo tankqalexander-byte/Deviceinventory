@@ -7,6 +7,7 @@ import firebaseConfig from "../firebase-applet-config.json" with { type: "json" 
 import type { CollectionName } from "../server/snapshot.ts";
 import { deleteRecord, getRecord, listRecords, putRecord } from "../server/repo.ts";
 import { validateWrite, isValidId } from "../server/validation.ts";
+import { checkAccess, type AccessResult } from "../server/access.ts";
 import { d1Db, ensureSchema } from "./d1.ts";
 import { ensureImported, ImportPending } from "./import.ts";
 
@@ -14,6 +15,7 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   AUTH_DISABLED?: string;
+  ALLOWED_EMAILS?: string;
 }
 
 const ROUTES: Record<string, CollectionName> = {
@@ -24,22 +26,24 @@ const ROUTES: Record<string, CollectionName> = {
   subscriptions: "subscriptions",
 };
 
-// Same sign-in policy as the old Firestore rules: any signed-in Firebase user.
+// Only approved Google accounts (see server/access.ts). Tokens are verified
+// against Google's public keys for this Firebase project.
 const JWKS = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
 );
-async function isSignedIn(req: Request, env: Env) {
-  if (env.AUTH_DISABLED === "true") return true;
+async function authorize(req: Request, env: Env): Promise<AccessResult | null> {
+  if (env.AUTH_DISABLED === "true") return { ok: true, email: "auth-disabled" };
   const m = /^Bearer (.+)$/.exec(req.headers.get("Authorization") || "");
-  if (!m) return false;
+  if (!m) return null;
   try {
     const { payload } = await jwtVerify(m[1], JWKS, {
       issuer: `https://securetoken.google.com/${firebaseConfig.projectId}`,
       audience: firebaseConfig.projectId,
     });
-    return typeof payload.sub === "string" && payload.sub.length > 0;
+    if (typeof payload.sub !== "string" || !payload.sub) return null;
+    return checkAccess(payload as any, env.ALLOWED_EMAILS);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -54,7 +58,9 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
     await db.query("SELECT 1");
     return json({ ok: true });
   }
-  if (!(await isSignedIn(req, env))) return json({ error: "Sign-in required" }, 401);
+  const access = await authorize(req, env);
+  if (!access) return json({ error: "Sign-in required" }, 401);
+  if (access.ok === false) return json({ error: access.reason }, 403);
 
   try {
     await ensureImported(env.DB, db, {

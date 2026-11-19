@@ -31,8 +31,9 @@ import {
   Briefcase,
   Edit2
 } from "lucide-react";
-import { auth, signInWithGoogle, signInUserAnonymously, logoutUser } from "./firebase";
+import { auth, signInWithGoogle, logoutUser } from "./firebase";
 import {
+  ApiError,
   fetchDevices,
   saveDevice,
   deleteDevice,
@@ -54,6 +55,7 @@ export default function App() {
   // --- Auth & Sync State ---
   const [user, setUser] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
 
   // --- 1. STATE INITIALIZATION ---
   const [devices, rawSetDevices] = useState<Device[]>([]);
@@ -269,8 +271,17 @@ export default function App() {
   // Listen to Auth state and load/seed cloud database
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+      setAccessDenied(null);
+
+      // Leftover anonymous guest session from the old version: sign out, which
+      // re-triggers this listener with no user and shows the sign-in screen.
+      if (currentUser?.isAnonymous) {
+        await logoutUser();
+        return;
+      }
+
       setUser(currentUser);
-      
+
       if (currentUser) {
         setIsAuthLoading(true);
         try {
@@ -345,18 +356,16 @@ export default function App() {
           }
         } catch (err) {
           console.error("Failed to load and seed database:", err);
-          triggerToast("Error connecting to cloud database.");
+          if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+            setAccessDenied(currentUser.email ?? "This account");
+          } else {
+            triggerToast("Error connecting to cloud database.");
+          }
         } finally {
           setIsAuthLoading(false);
         }
       } else {
-        setIsAuthLoading(true);
-        try {
-          await signInUserAnonymously();
-        } catch (error) {
-          console.error("Failed to sign in anonymously on boot:", error);
-          setIsAuthLoading(false);
-        }
+        setIsAuthLoading(false);
       }
     });
     
@@ -712,7 +721,7 @@ export default function App() {
           </div>
           
           <div className="space-y-1">
-            <h1 className="font-bold text-xl text-warm-gray-900 tracking-tight font-display">Device Inventory</h1>
+            <h1 className="font-bold text-xl text-warm-gray-900 tracking-tight font-display">Mavis Device Inventory</h1>
             <p className="text-[10px] uppercase font-bold tracking-wider text-matcha-700 bg-matcha-100/50 px-2 py-0.5 rounded-full inline-block">
               Cloud Secured Admin Hub
             </p>
@@ -738,9 +747,40 @@ export default function App() {
     );
   }
 
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen bg-warm-gray-50 flex flex-col items-center justify-center font-sans p-4 selection:bg-matcha-200">
+        <div className="w-full max-w-sm bg-white border border-matcha-100 rounded-2xl p-8 shadow-md space-y-6 text-center animate-in fade-in duration-500">
+          <div className="inline-flex p-3.5 bg-matcha-50 rounded-xl text-matcha-700 mx-auto">
+            <Leaf className="h-7 w-7" />
+          </div>
+
+          <div className="space-y-1">
+            <h1 className="font-bold text-xl text-warm-gray-900 tracking-tight font-display">Access denied</h1>
+          </div>
+
+          <div className="py-2.5 border-y border-warm-gray-100 text-xs text-warm-gray-800 space-y-2 text-center">
+            <p>
+              <span className="font-semibold break-all">{accessDenied}</span> isn't approved for Mavis Device Inventory.
+              Ask the administrator to add your Google account, or sign in with a different account.
+            </p>
+          </div>
+
+          <button
+            onClick={logoutUser}
+            className="w-full inline-flex items-center justify-center gap-2 bg-matcha-600 hover:bg-matcha-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-colors cursor-pointer group active:scale-98 shadow-xs"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span>Sign out</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-warm-gray-50 flex flex-col font-sans selection:bg-matcha-200">
-      
+
       {/* Dynamic Success Toast banner */}
       {toastMessage && (
         <div className="fixed top-4 right-4 z-50 bg-matcha-900 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 border border-matcha-700 animate-in fade-in slide-in-from-top-4 duration-300">
@@ -759,7 +799,7 @@ export default function App() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-bold text-lg text-warm-gray-900 tracking-tight font-display">Device Inventory</h1>
+                <h1 className="font-bold text-lg text-warm-gray-900 tracking-tight font-display">Mavis Device Inventory</h1>
                 <span className="text-[10px] uppercase font-bold tracking-wider bg-matcha-100 text-matcha-800 px-1.5 py-0.5 rounded">
                   Admin Hub
                 </span>
@@ -775,7 +815,7 @@ export default function App() {
                 Current Date: <span className="text-matcha-700 font-semibold">{formatFriendlyDate(getTodayDateString())}</span>
               </span>
               <span className="text-[10px] text-warm-gray-800 truncate max-w-[200px] block">
-                Logged in: {user?.isAnonymous ? "Cloud Guest Session" : user?.email}
+                Logged in: {user?.email}
               </span>
             </div>
             
@@ -817,25 +857,14 @@ export default function App() {
                 <Plus className="h-3.5 w-3.5" />
                 Add Device
               </button>
-              {user?.isAnonymous ? (
-                <button
-                  onClick={signInWithGoogle}
-                  className="inline-flex items-center gap-1 bg-matcha-600 hover:bg-matcha-700 text-white px-2.5 py-1.5 rounded-lg border border-matcha-700 transition-colors cursor-pointer text-xs font-semibold shadow-xs"
-                  title="Connect with Google SSO"
-                >
-                  <LogIn className="h-3.5 w-3.5" />
-                  <span>Connect Google</span>
-                </button>
-              ) : (
-                <button
-                  onClick={logoutUser}
-                  className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-1.5 rounded-lg border border-rose-100 transition-colors cursor-pointer text-xs font-semibold shadow-xs"
-                  title="Sign Out of Inventory Hub"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  <span>Sign Out</span>
-                </button>
-              )}
+              <button
+                onClick={logoutUser}
+                className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-1.5 rounded-lg border border-rose-100 transition-colors cursor-pointer text-xs font-semibold shadow-xs"
+                title="Sign Out of Inventory Hub"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>Sign Out</span>
+              </button>
             </div>
           </div>
         </div>

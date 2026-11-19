@@ -6,14 +6,17 @@ PostgreSQL (`server/`). Both serve the same app and the same API.
 
 ## Deploy to Cloudflare (Workers + D1)
 
-1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Import a repository**
+1. Before deploying, set who may sign in. Edit `wrangler.jsonc` → `"vars"` → `"ALLOWED_EMAILS"`.
+   It takes a comma-separated list of Google account emails, or `@yourdomain.com` to allow a whole domain.
+   If it's empty, nobody can get in. To change it later, edit the file and push; Cloudflare redeploys.
+2. Cloudflare dashboard → **Workers & Pages** → **Create** → **Import a repository**
    → pick this repo → **Deploy**. (Or locally: `npx wrangler login && npm run cf:deploy`.)
    The build creates the `device-inventory` D1 database automatically.
-2. Open the app. On its first request the Worker creates the tables and copies
+3. Open the app. On its first request the Worker creates the tables and copies
    all existing Firestore data into D1, then checks every record against
    Firestore before serving anything. It does this once; after that Firestore
    is never read or written again. If D1 already has data, the copy is skipped.
-3. For **Google sign-in**, add the new address (e.g. `device-inventory.<you>.workers.dev`)
+4. For **Google sign-in**, add the new address (e.g. `device-inventory.<you>.workers.dev`)
    in Firebase console → Authentication → Settings → **Authorized domains**.
 
 Local preview with a local D1 database: `npm run cf:dev` (http://localhost:8787).
@@ -26,6 +29,8 @@ Prerequisite: Node.js 20+
 npm install
 npm run dev            # http://localhost:3000
 ```
+
+Put `ALLOWED_EMAILS=you@gmail.com` in `.env.local` (Node server), or `AUTH_DISABLED=true` for local testing only.
 
 With no `DATABASE_URL` set, the server uses an embedded Postgres (PGlite)
 stored in `./data/pglite`, so there is nothing else to install. To use a real
@@ -86,8 +91,10 @@ For the current data `extra` is empty.
 
 ## API
 
-All routes require a Firebase ID token (`Authorization: Bearer <token>`),
-matching the old Firestore rules: any signed-in user, including anonymous.
+All routes require a Firebase ID token (`Authorization: Bearer <token>`) from a
+Google account listed in `ALLOWED_EMAILS`. Anonymous (guest) sessions and unverified
+emails are refused. Requests without a valid token get `401`; signed-in accounts
+that aren't approved get `403`.
 
 | Method | Path | |
 | --- | --- | --- |

@@ -11,6 +11,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { openDb } from "./db.ts";
 import { deleteRecord, getRecord, listRecords, putRecord } from "./repo.ts";
 import { validateWrite, isValidId } from "./validation.ts";
+import { checkAccess } from "./access.ts";
 import type { CollectionName } from "./snapshot.ts";
 import firebaseConfig from "../firebase-applet-config.json" with { type: "json" };
 
@@ -27,10 +28,10 @@ const ROUTES: Record<string, CollectionName> = {
 };
 
 // --- Auth -------------------------------------------------------------------
-// Same policy as the old Firestore rules: any signed-in Firebase user
-// (including anonymous) may read and write. Tokens are verified server-side.
+// Only approved Google accounts (ALLOWED_EMAILS, see server/access.ts).
+// Tokens are verified server-side with firebase-admin.
 const authDisabled = process.env.AUTH_DISABLED === "true";
-let verifyToken: ((t: string) => Promise<{ uid: string }>) | null = null;
+let verifyToken: ((t: string) => Promise<Record<string, any>>) | null = null;
 async function getVerifier() {
   if (!verifyToken) {
     const { initializeApp, getApps } = await import("firebase-admin/app");
@@ -45,12 +46,16 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (authDisabled) return next();
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || "");
   if (!m) return res.status(401).json({ error: "Sign-in required" });
+  let claims: Record<string, any>;
   try {
-    (req as any).uid = (await (await getVerifier())(m[1])).uid;
-    next();
+    claims = await (await getVerifier())(m[1]);
   } catch {
-    res.status(401).json({ error: "Invalid or expired sign-in token" });
+    return res.status(401).json({ error: "Invalid or expired sign-in token" });
   }
+  const access = checkAccess(claims, process.env.ALLOWED_EMAILS);
+  if (access.ok === false) return res.status(403).json({ error: access.reason });
+  (req as any).userEmail = access.email;
+  next();
 }
 
 // --- App --------------------------------------------------------------------

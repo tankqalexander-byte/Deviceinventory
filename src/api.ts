@@ -3,26 +3,47 @@
 import { auth } from "./firebase";
 import { Device, StaffMember, Subscription } from "./types";
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+const MAX_ATTEMPTS = 12;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = await auth.currentUser?.getIdToken();
-  const res = await fetch(`/api/${path}`, {
-    method,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
+  for (let attempt = 1; ; attempt++) {
+    const token = await auth.currentUser?.getIdToken();
+    const res = await fetch(`/api/${path}`, {
+      method,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (res.ok) return res.status === 204 ? (undefined as T) : res.json();
+
+    // 503 = server is doing its one-time data import; wait and retry.
+    if (res.status === 503 && attempt < MAX_ATTEMPTS) {
+      const retryAfter = Number(res.headers.get("Retry-After"));
+      const seconds = Math.min(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 5, 10);
+      await sleep(seconds * 1000);
+      continue;
+    }
+
     let message = `${method} /api/${path} failed with ${res.status}`;
     try {
       const err = await res.json();
       if (err?.error) message += `: ${err.error}`;
     } catch {}
     console.error("API error:", message);
-    throw new Error(message);
+    throw new ApiError(message, res.status);
   }
-  return res.status === 204 ? (undefined as T) : res.json();
 }
 
 const enc = encodeURIComponent;
