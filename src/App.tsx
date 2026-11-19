@@ -4,6 +4,7 @@ import { INITIAL_DEVICES, INITIAL_SUBSCRIPTIONS, STAFF_MEMBERS } from "./data";
 import DeviceTable from "./components/DeviceTable";
 import DeviceDetails from "./components/DeviceDetails";
 import RecentActivityFeed from "./components/RecentActivityFeed";
+import CategoryAvailabilityCards from "./components/CategoryAvailabilityCards";
 import AddDeviceModal from "./components/AddDeviceModal";
 import SettingsModal from "./components/SettingsModal";
 import SubscriptionDirectory from "./components/SubscriptionDirectory";
@@ -971,6 +972,23 @@ export default function App() {
         {activeMainTab === "devices" ? (
           <div className="flex flex-col gap-6 flex-1 w-full animate-in fade-in duration-300">
             
+            <CategoryAvailabilityCards
+              devices={devices}
+              categories={categories}
+              selectedCategory={selectedCategory}
+              selectedStatus={selectedStatus}
+              onSelectCategory={(category) => {
+                const isActive = selectedCategory === category && selectedStatus === "available";
+                setSelectedCategory(isActive ? "All" : category);
+                setSelectedStatus(isActive ? "All" : "available");
+                if (!isActive) {
+                  setTimeout(() => {
+                    document.getElementById("catalog-filters")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }, 0);
+                }
+              }}
+            />
+
             {/* Recent Activity Feed Section for Quick Monitoring */}
             <RecentActivityFeed 
               devices={devices} 
@@ -980,7 +998,7 @@ export default function App() {
             <section className="space-y-6 w-full">
               
               {/* Search & Filter Controls */}
-              <div className="bg-white border border-matcha-100 rounded-b-2xl rounded-tr-2xl p-4 shadow-xs space-y-4 border-t-0">
+              <div id="catalog-filters" className="bg-white border border-matcha-100 rounded-b-2xl rounded-tr-2xl p-4 shadow-xs space-y-4 border-t-0">
                 <div className="flex flex-col sm:flex-row gap-3">
                 {/* Search Bar */}
                 <div className="relative flex-1">
