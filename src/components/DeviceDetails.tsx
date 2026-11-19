@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { Device, StaffMember, LoanRecord, DeviceCondition, EmploymentStatus, EMPLOYMENT_STATUSES } from "../types";
-import { formatFriendlyDate, getLoanRemainingDays, SYSTEM_TODAY, parseDate, getEmploymentStatusMeta } from "../utils";
+import { formatFriendlyDate, getLoanRemainingDays, SYSTEM_TODAY, parseDate, getEmploymentStatusMeta, getTodayDateString } from "../utils";
+import { validateLoanDates } from "../loanDates";
 import { 
   X, 
   User, 
@@ -15,6 +16,7 @@ import {
   Trash2, 
   PlusCircle, 
   Edit,
+  Pencil,
   ClipboardList,
   MapPin,
   CornerDownLeft,
@@ -31,6 +33,11 @@ interface DeviceDetailsProps {
   superAdminPin?: string;
   onUnlockSuperAdmin?: (pin: string) => void;
   onDeleteHistoryRecord?: (deviceId: string, historyRecordId: string) => void;
+  onEditLoanDates?: (
+    deviceId: string,
+    loanId: string,
+    changes: { checkoutDate?: string; expectedReturnDate?: string; returnedDate?: string }
+  ) => void;
   onClose: () => void;
   onCheckout: (
     deviceId: string, 
@@ -58,6 +65,7 @@ export default function DeviceDetails({
   superAdminPin = "admin123",
   onUnlockSuperAdmin,
   onDeleteHistoryRecord,
+  onEditLoanDates,
   onClose,
   onCheckout,
   onReturn,
@@ -69,6 +77,45 @@ export default function DeviceDetails({
 }: DeviceDetailsProps) {
   const [activeTab, setActiveTab] = useState<"status" | "history">("status");
   
+  // Loan date editing (only one form open at a time; loanId identifies the record)
+  const [editingLoanId, setEditingLoanId] = useState<string | null>(null);
+  const [editCheckout, setEditCheckout] = useState("");
+  const [editDue, setEditDue] = useState("");
+  const [editReturned, setEditReturned] = useState("");
+  const [editLoanError, setEditLoanError] = useState<string | null>(null);
+
+  const startEditLoan = (r: LoanRecord) => {
+    setEditingLoanId(r.id);
+    setEditCheckout(r.checkoutDate || "");
+    setEditDue(r.expectedReturnDate || "");
+    setEditReturned(r.returnedDate || "");
+    setEditLoanError(null);
+  };
+  const cancelEditLoan = () => {
+    setEditingLoanId(null);
+    setEditLoanError(null);
+  };
+  const saveEditLoan = (kind: "active" | "past") => {
+    if (!device || !editingLoanId) return;
+    const err = validateLoanDates(
+      { checkout: editCheckout, due: editDue, returned: editReturned },
+      kind,
+      getTodayDateString()
+    );
+    if (err) {
+      setEditLoanError(err);
+      return;
+    }
+    onEditLoanDates?.(
+      device.id,
+      editingLoanId,
+      kind === "active"
+        ? { checkoutDate: editCheckout, expectedReturnDate: editDue }
+        : { checkoutDate: editCheckout, returnedDate: editReturned }
+    );
+    cancelEditLoan();
+  };
+
   // Superadmin History Removal Dialog State
   const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
   const [pinInput, setPinInput] = useState<string>("");
@@ -554,14 +601,75 @@ export default function DeviceDetails({
                 </div>
 
                 <div className="bg-white border border-matcha-100 p-3 rounded-lg grid grid-cols-2 gap-2 text-[11px] text-warm-gray-800">
-                  <div>
-                    <span className="block opacity-80 uppercase tracking-wider text-[9px] font-bold">Checked Out On</span>
-                    <span className="font-semibold text-warm-gray-900">{formatFriendlyDate(device.currentLoan.checkoutDate)}</span>
-                  </div>
-                  <div>
-                    <span className="block opacity-80 uppercase tracking-wider text-[9px] font-bold">Due Back Date</span>
-                    <span className="font-semibold text-warm-gray-900">{formatFriendlyDate(device.currentLoan.expectedReturnDate)}</span>
-                  </div>
+                  {editingLoanId === device.currentLoan.id ? (
+                    <div className="col-span-2 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label htmlFor="edit-loan-checkout" className="block opacity-80 uppercase tracking-wider text-[9px] font-bold">Checked Out On</label>
+                          <input
+                            id="edit-loan-checkout"
+                            type="date"
+                            aria-label="Checkout date"
+                            value={editCheckout}
+                            onChange={(e) => setEditCheckout(e.target.value)}
+                            className="w-full text-[11px] p-1.5 rounded-lg border border-warm-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-matcha-500"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label htmlFor="edit-loan-due" className="block opacity-80 uppercase tracking-wider text-[9px] font-bold">Due Back Date</label>
+                          <input
+                            id="edit-loan-due"
+                            type="date"
+                            aria-label="Due back date"
+                            value={editDue}
+                            onChange={(e) => setEditDue(e.target.value)}
+                            className="w-full text-[11px] p-1.5 rounded-lg border border-warm-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-matcha-500"
+                          />
+                          <p className="text-[10px] text-warm-gray-800 opacity-80">Leave blank for no end date</p>
+                        </div>
+                      </div>
+                      {editLoanError && <p role="alert" className="text-xs text-red-600">{editLoanError}</p>}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => saveEditLoan("active")}
+                          className="text-[11px] px-2.5 py-1 rounded-lg bg-matcha-600 hover:bg-matcha-700 text-white font-semibold transition-colors cursor-pointer"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditLoan}
+                          className="text-[11px] px-2.5 py-1 rounded-lg border border-warm-gray-200 bg-white hover:bg-warm-gray-50 text-warm-gray-800 font-semibold transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <span className="block opacity-80 uppercase tracking-wider text-[9px] font-bold">Checked Out On</span>
+                        <span className="font-semibold text-warm-gray-900">{formatFriendlyDate(device.currentLoan.checkoutDate)}</span>
+                      </div>
+                      <div>
+                        <span className="block opacity-80 uppercase tracking-wider text-[9px] font-bold">Due Back Date</span>
+                        <span className="font-semibold text-warm-gray-900">{formatFriendlyDate(device.currentLoan.expectedReturnDate)}</span>
+                      </div>
+                      {onEditLoanDates && (
+                        <div className="col-span-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditLoan(device.currentLoan!)}
+                            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-warm-gray-200 bg-white hover:bg-warm-gray-50 text-warm-gray-800 font-semibold transition-colors cursor-pointer"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Edit dates
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
                   <div className="col-span-2 pt-2 border-t border-warm-gray-100/50 flex justify-between items-center">
                     <span className="font-medium">Rental Status:</span>
                     <span className={`px-2 py-0.5 rounded text-xs font-semibold ${loanRemaining?.isOverdue ? "bg-rose-100 text-rose-800" : "bg-matcha-100 text-matcha-800"}`}>
@@ -967,6 +1075,17 @@ export default function DeviceDetails({
                             <span className="text-[10px] font-mono text-warm-gray-800 uppercase tracking-wide bg-warm-gray-100 px-1.5 py-0.5 rounded">
                               {record.userDepartment}
                             </span>
+                            {isSuperAdmin && !isCurrent && record.returnedDate && onEditLoanDates && (
+                              <button
+                                type="button"
+                                onClick={() => startEditLoan(record)}
+                                className="text-warm-gray-800 hover:text-matcha-700 hover:bg-matcha-50 p-1 rounded transition-colors cursor-pointer"
+                                title="Edit loan dates (Superadmin)"
+                                aria-label={`Edit loan dates for ${record.userName}`}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => {
@@ -988,10 +1107,56 @@ export default function DeviceDetails({
                           </div>
                         </div>
 
-                        <p className="text-[10px] text-warm-gray-800 font-mono">
-                          {formatFriendlyDate(record.checkoutDate)} &rarr;{" "}
-                          {record.returnedDate ? formatFriendlyDate(record.returnedDate) : "Present"}
-                        </p>
+                        {editingLoanId === record.id && !isCurrent ? (
+                          <div className="space-y-2 pt-1">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label htmlFor={`edit-hist-checkout-${record.id}`} className="block text-[10px] font-semibold text-warm-gray-800">Checkout date</label>
+                                <input
+                                  id={`edit-hist-checkout-${record.id}`}
+                                  type="date"
+                                  aria-label="Checkout date"
+                                  value={editCheckout}
+                                  onChange={(e) => setEditCheckout(e.target.value)}
+                                  className="w-full text-[11px] p-1.5 rounded-lg border border-warm-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-matcha-500"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label htmlFor={`edit-hist-returned-${record.id}`} className="block text-[10px] font-semibold text-warm-gray-800">Returned date</label>
+                                <input
+                                  id={`edit-hist-returned-${record.id}`}
+                                  type="date"
+                                  aria-label="Returned date"
+                                  value={editReturned}
+                                  onChange={(e) => setEditReturned(e.target.value)}
+                                  className="w-full text-[11px] p-1.5 rounded-lg border border-warm-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-matcha-500"
+                                />
+                              </div>
+                            </div>
+                            {editLoanError && <p role="alert" className="text-xs text-red-600">{editLoanError}</p>}
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => saveEditLoan("past")}
+                                className="text-[11px] px-2.5 py-1 rounded-lg bg-matcha-600 hover:bg-matcha-700 text-white font-semibold transition-colors cursor-pointer"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditLoan}
+                                className="text-[11px] px-2.5 py-1 rounded-lg border border-warm-gray-200 bg-white hover:bg-warm-gray-50 text-warm-gray-800 font-semibold transition-colors cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-warm-gray-800 font-mono">
+                            {formatFriendlyDate(record.checkoutDate)} &rarr;{" "}
+                            {record.returnedDate ? formatFriendlyDate(record.returnedDate) : "Present"}
+                          </p>
+                        )}
 
                         <div className="flex items-center gap-3 text-[10px] pt-1">
                           <span className="text-warm-gray-800">

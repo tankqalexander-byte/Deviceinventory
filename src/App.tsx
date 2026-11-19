@@ -9,6 +9,7 @@ import AddDeviceModal from "./components/AddDeviceModal";
 import SettingsModal from "./components/SettingsModal";
 import SubscriptionDirectory from "./components/SubscriptionDirectory";
 import { SYSTEM_TODAY, getTodayDateString, getLoanRemainingDays, formatFriendlyDate, getEmploymentStatusMeta } from "./utils";
+import { applyLoanDateChanges } from "./loanDates";
 import { 
   Search, 
   Plus, 
@@ -633,6 +634,20 @@ export default function App() {
       })
     );
     triggerToast("Equipment details updated successfully.");
+  };
+
+  // EDIT LOAN DATES: updates both the history entry and (if active) currentLoan
+  const handleEditLoanDates = (
+    deviceId: string,
+    loanId: string,
+    changes: { checkoutDate?: string; expectedReturnDate?: string; returnedDate?: string }
+  ) => {
+    setDevices((prevDevices) =>
+      prevDevices.map((device) =>
+        device.id === deviceId ? applyLoanDateChanges(device, loanId, changes) : device
+      )
+    );
+    triggerToast("Loan dates updated.");
   };
 
   // ADD NEW DEVICE: Inserts a fresh device record
@@ -1370,6 +1385,7 @@ export default function App() {
               onSendToMaintenance={handleSendToMaintenance}
               onRetireDevice={handleRetireDevice}
               onEditDevice={handleEditDevice}
+              onEditLoanDates={handleEditLoanDates}
               onDeleteDevice={handleDeleteDevice}
             />
           </div>
