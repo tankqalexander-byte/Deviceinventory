@@ -1,0 +1,29 @@
+// Cloudflare Workers deployment.
+// Deploying from the Cloudflare dashboard ("Import a repository") or with
+// `npx wrangler deploy` builds the front end, creates the D1 database if it
+// doesn't exist yet, and deploys. On the first API request the Worker creates
+// the tables and copies the existing Firestore data into D1 (see worker/import.ts).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "device-inventory",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-11-01",
+  "build": {
+    "command": "npx vite build"
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "device-inventory"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

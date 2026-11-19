@@ -1,7 +1,22 @@
 # Device Inventory
 
-Equipment loan tracker. Data is stored in **PostgreSQL** behind a small Express
-API (`server/`). Firebase is used only for sign-in.
+Equipment loan tracker. Firebase is used only for sign-in; the data lives in SQL.
+It runs on **Cloudflare Workers + D1** (`worker/`), or as a Node server with
+PostgreSQL (`server/`). Both serve the same app and the same API.
+
+## Deploy to Cloudflare (Workers + D1)
+
+1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Import a repository**
+   → pick this repo → **Deploy**. (Or locally: `npx wrangler login && npm run cf:deploy`.)
+   The build creates the `device-inventory` D1 database automatically.
+2. Open the app. On its first request the Worker creates the tables and copies
+   all existing Firestore data into D1, then checks every record against
+   Firestore before serving anything. It does this once; after that Firestore
+   is never read or written again. If D1 already has data, the copy is skipped.
+3. For **Google sign-in**, add the new address (e.g. `device-inventory.<you>.workers.dev`)
+   in Firebase console → Authentication → Settings → **Authorized domains**.
+
+Local preview with a local D1 database: `npm run cf:dev` (http://localhost:8787).
 
 ## Run locally
 

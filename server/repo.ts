@@ -26,7 +26,7 @@ const LOAN_STATUS = ["active", "returned", "overdue"] as const;
 
 const t = (key: string, col = key, en?: readonly string[]): Field => ({ key, col, kind: "text", enum: en });
 
-const ENTITIES = {
+export const ENTITIES = {
   categories: { table: "categories", fields: [t("name")] },
   departments: { table: "departments", fields: [t("name")] },
   staffMembers: {
@@ -99,7 +99,7 @@ function applyExtra(out: Json, extra: Extra | null | undefined) {
 const extraJson = (e: Extra) => JSON.stringify(e.fields || e.absent ? e : {});
 
 /** Encode a record; `id` is the primary key (the Firestore document ID). */
-function encode(name: CollectionName, id: string, data: Json) {
+export function encode(name: CollectionName, id: string, data: Json) {
   const extra: Extra = {};
   const handled = new Set<string>(["id"]);
   if (!Object.prototype.hasOwnProperty.call(data, "id")) (extra.absent ??= []).push("id");

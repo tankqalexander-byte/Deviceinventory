@@ -11,3 +11,5 @@ dist-server/
 data/
 # Firestore snapshots contain staff details and passwords
 firestore-export*.json
+.wrangler/
+.dev.vars*
