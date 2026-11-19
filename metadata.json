@@ -1,6 +1,6 @@
 {
-  "name": "Device Inventory",
+  "name": "Mavis Device Inventory",
   "description": "An elegant, interactive device inventory system for managing loaned equipment to staff, including checkout history and status tracking.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

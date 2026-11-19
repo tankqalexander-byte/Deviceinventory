@@ -6,12 +6,10 @@ import {
   Check, 
   Trash2, 
   Settings, 
-  ListPlus, 
   FolderEdit, 
   RotateCcw, 
   Database, 
   AlertTriangle,
-  User,
   UserPlus,
   Users,
   Mail,
@@ -1247,7 +1245,7 @@ export default function SettingsModal({
                       Superadmin Passcode
                     </label>
                     <input
-                      type="text"
+                      type="password"
                       value={superAdminPin}
                       onChange={(e) => {
                         const newPin = e.target.value;
@@ -1260,7 +1258,7 @@ export default function SettingsModal({
                   </div>
                   <button
                     type="button"
-                    onClick={() => triggerToast(`Superadmin passcode set to: ${superAdminPin}`)}
+                    onClick={() => triggerToast("Superadmin passcode updated.")}
                     className="self-end bg-matcha-600 hover:bg-matcha-700 text-white font-semibold text-xs px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-xs"
                   >
                     Save Passcode
@@ -1275,7 +1273,7 @@ export default function SettingsModal({
                   Database & System Administration
                 </h4>
                 <p className="text-[11px] text-warm-gray-800 leading-relaxed">
-                  Perform administrative operations on the system database. These operations directly update the local storage.
+                  Perform administrative operations on the system database. These operations change the live database.
                 </p>
 
                 <div className="space-y-2 pt-1">

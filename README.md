@@ -1,4 +1,4 @@
-# Device Inventory
+# Mavis Device Inventory
 
 Equipment loan tracker. Firebase is used only for sign-in; the data lives in SQL.
 It runs on **Cloudflare Workers + D1** (`worker/`), or as a Node server with
@@ -39,6 +39,8 @@ server, put `DATABASE_URL=postgres://user:pass@host:5432/dbname` in `.env.local`
 The schema is created automatically on first start (`server/schema.ts`).
 
 ## Production
+
+This section is for the Node server alternative; the main deployment is Cloudflare (above).
 
 ```bash
 npm run build
@@ -98,10 +100,13 @@ that aren't approved get `403`.
 
 | Method | Path | |
 | --- | --- | --- |
+| GET | `/api/health` | no sign-in needed; reports whether the database is reachable |
 | GET | `/api/{devices,staff,categories,departments,subscriptions}` | list |
 | GET | `/api/<collection>/<id>` | one record |
 | PUT | `/api/<collection>/<id>` | create or replace (validated like `firestore.rules`) |
 | DELETE | `/api/<collection>/<id>` | delete |
+
+While the Cloudflare version copies data from Firestore on its first run, the API answers `503` with a `Retry-After` header; the app retries automatically.
 
 ## Tests
 

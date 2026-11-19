@@ -1,6 +1,6 @@
 import React from "react";
 import { Device } from "../types";
-import { Laptop, Clock, AlertCircle, Wrench, CheckCircle } from "lucide-react";
+import { Laptop, AlertCircle, Wrench, CheckCircle } from "lucide-react";
 
 interface StatsGridProps {
   devices: Device[];

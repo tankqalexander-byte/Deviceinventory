@@ -5,11 +5,6 @@ import {
   ArrowUpRight, 
   ArrowDownLeft, 
   Clock, 
-  Laptop, 
-  Smartphone, 
-  Headphones, 
-  Monitor, 
-  Coffee, 
   ChevronDown, 
   ChevronUp, 
   ExternalLink,
@@ -153,25 +148,6 @@ export default function RecentActivityFeed({ devices, onSelectDevice }: RecentAc
 
   const totalCheckoutsCount = useMemo(() => allActivities.filter(a => a.type === "checkout").length, [allActivities]);
   const totalReturnsCount = useMemo(() => allActivities.filter(a => a.type === "return").length, [allActivities]);
-
-  // Helper for category icons
-  const getCategoryIcon = (category: string, image: string) => {
-    switch (category) {
-      case "Laptops":
-        return <Laptop className="h-4 w-4 text-matcha-700" />;
-      case "Tablets & Phones":
-        return <Smartphone className="h-4 w-4 text-matcha-700" />;
-      case "Peripherals":
-        if (image === "headphones") {
-          return <Headphones className="h-4 w-4 text-matcha-700" />;
-        }
-        return <Monitor className="h-4 w-4 text-matcha-700" />;
-      case "Tea & Pantry":
-        return <Coffee className="h-4 w-4 text-tea-amber-600" />;
-      default:
-        return <Laptop className="h-4 w-4 text-matcha-700" />;
-    }
-  };
 
   return (
     <div className="bg-white border border-matcha-100 rounded-2xl shadow-xs overflow-hidden transition-all duration-200">

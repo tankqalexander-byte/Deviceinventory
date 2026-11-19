@@ -31,19 +31,20 @@ const ROUTES: Record<string, CollectionName> = {
 const JWKS = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
 );
-async function authorize(req: Request, env: Env): Promise<AccessResult | null> {
+type AuthOutcome = AccessResult | { ok: false; status: 401; reason: string };
+async function authorize(req: Request, env: Env): Promise<AuthOutcome> {
   if (env.AUTH_DISABLED === "true") return { ok: true, email: "auth-disabled" };
   const m = /^Bearer (.+)$/.exec(req.headers.get("Authorization") || "");
-  if (!m) return null;
+  if (!m) return { ok: false, status: 401, reason: "Sign-in required" };
   try {
     const { payload } = await jwtVerify(m[1], JWKS, {
       issuer: `https://securetoken.google.com/${firebaseConfig.projectId}`,
       audience: firebaseConfig.projectId,
     });
-    if (typeof payload.sub !== "string" || !payload.sub) return null;
+    if (typeof payload.sub !== "string" || !payload.sub) throw new Error("no subject");
     return checkAccess(payload as any, env.ALLOWED_EMAILS);
   } catch {
-    return null;
+    return { ok: false, status: 401, reason: "Invalid or expired sign-in token" };
   }
 }
 
@@ -51,16 +52,20 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
+  if (url.pathname === "/api/health") {
+    try {
+      await ensureSchema(env.DB);
+      await env.DB.prepare("SELECT 1").first();
+      return json({ ok: true });
+    } catch {
+      return json({ ok: false }, 503);
+    }
+  }
   await ensureSchema(env.DB);
   const db = d1Db(env.DB);
 
-  if (url.pathname === "/api/health") {
-    await db.query("SELECT 1");
-    return json({ ok: true });
-  }
   const access = await authorize(req, env);
-  if (!access) return json({ error: "Sign-in required" }, 401);
-  if (access.ok === false) return json({ error: access.reason }, 403);
+  if (access.ok === false) return json({ error: access.reason }, "status" in access ? access.status : 403);
 
   try {
     await ensureImported(env.DB, db, {
@@ -76,7 +81,12 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   const [, , segment, rawId, ...rest] = url.pathname.split("/");
   const c = ROUTES[segment];
   if (!c || rest.length) return json({ error: "Unknown collection" }, 404);
-  const id = rawId === undefined ? undefined : decodeURIComponent(rawId);
+  let id: string | undefined;
+  try {
+    id = rawId === undefined ? undefined : decodeURIComponent(rawId);
+  } catch {
+    return json({ error: "invalid document id" }, 400);
+  }
 
   if (id === undefined || id === "") {
     if (req.method !== "GET") return json({ error: "Method not allowed" }, 405);
@@ -89,6 +99,7 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
       return doc ? json(doc) : json({ error: "Not found" }, 404);
     }
     case "PUT": {
+      if (Number(req.headers.get("Content-Length") || 0) > 5 * 1024 * 1024) return json({ error: "Request too large" }, 413);
       let body: unknown;
       try {
         body = await req.json();

@@ -27,7 +27,6 @@ import {
   UserCheck,
   AlertCircle,
   KeyRound,
-  Globe,
   Briefcase,
   Edit2
 } from "lucide-react";
@@ -56,6 +55,53 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState<string | null>(null);
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
+
+  // Remove everything this app caches in the browser (including subscription passwords)
+  const clearCachedData = () => {
+    [
+      "tealoan_devices",
+      "tealoan_staff_members",
+      "tealoan_subscriptions",
+      "device_categories",
+      "device_departments",
+      "tealoan_superadmin",
+    ].forEach((key) => localStorage.removeItem(key));
+  };
+
+  const handleSignOut = async () => {
+    clearCachedData();
+    await logoutUser();
+  };
+
+  const handleGoogleSignIn = async () => {
+    setSignInError(null);
+    setIsSigningIn(true);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      const code: string = err?.code ?? "unknown";
+      switch (code) {
+        case "auth/popup-closed-by-user":
+        case "auth/cancelled-popup-request":
+          break;
+        case "auth/unauthorized-domain":
+          setSignInError("This web address isn't authorised for Google sign-in yet. Add it in Firebase console → Authentication → Settings → Authorized domains.");
+          break;
+        case "auth/popup-blocked":
+          setSignInError("Your browser blocked the sign-in pop-up. Allow pop-ups for this site and try again.");
+          break;
+        case "auth/network-request-failed":
+          setSignInError("Network error — check your connection and try again.");
+          break;
+        default:
+          setSignInError("Google sign-in failed (" + code + "). Please try again.");
+      }
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
 
   // --- 1. STATE INITIALIZATION ---
   const [devices, rawSetDevices] = useState<Device[]>([]);
@@ -75,12 +121,12 @@ export default function App() {
           return !p || JSON.stringify(p) !== JSON.stringify(s);
         });
         modified.forEach((sub: Subscription) => {
-          saveSubscription(sub).catch(err => console.error("Database sync error:", err));
+          saveSubscription(sub).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
         
         const deleted = prev.filter((p: Subscription) => !next.some(s => s.id === p.id));
         deleted.forEach((sub: Subscription) => {
-          deleteSubscription(sub.id).catch(err => console.error("Database sync error:", err));
+          deleteSubscription(sub.id).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
       }
       
@@ -102,13 +148,13 @@ export default function App() {
           return !p || JSON.stringify(p) !== JSON.stringify(d);
         });
         modified.forEach((device: Device) => {
-          saveDevice(device).catch(err => console.error("Database sync error:", err));
+          saveDevice(device).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
         
         // Find deleted
         const deleted = prev.filter((p: Device) => !next.some(d => d.id === p.id));
         deleted.forEach((device: Device) => {
-          deleteDevice(device.id).catch(err => console.error("Database sync error:", err));
+          deleteDevice(device.id).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
       }
       
@@ -128,11 +174,11 @@ export default function App() {
         
         added.forEach((catName: string) => {
           const catId = catName.toLowerCase().replace(/[^a-z0-9]/g, "-") || `cat-${Date.now()}`;
-          saveCategory(catId, catName).catch(err => console.error("Database sync error:", err));
+          saveCategory(catId, catName).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
         deleted.forEach((catName: string) => {
           const catId = catName.toLowerCase().replace(/[^a-z0-9]/g, "-") || `cat-${Date.now()}`;
-          deleteCategory(catId).catch(err => console.error("Database sync error:", err));
+          deleteCategory(catId).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
       }
       
@@ -154,10 +200,10 @@ export default function App() {
         const deleted = prev.filter((p: StaffMember) => !next.some(s => s.id === p.id));
         
         addedOrModified.forEach((staff: StaffMember) => {
-          saveStaff(staff).catch(err => console.error("Database sync error:", err));
+          saveStaff(staff).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
         deleted.forEach((staff: StaffMember) => {
-          deleteStaff(staff.id).catch(err => console.error("Database sync error:", err));
+          deleteStaff(staff.id).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
       }
       
@@ -177,11 +223,11 @@ export default function App() {
         
         added.forEach((deptName: string) => {
           const deptId = deptName.toLowerCase().replace(/[^a-z0-9]/g, "-") || `dept-${Date.now()}`;
-          saveDepartment(deptId, deptName).catch(err => console.error("Database sync error:", err));
+          saveDepartment(deptId, deptName).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
         deleted.forEach((deptName: string) => {
           const deptId = deptName.toLowerCase().replace(/[^a-z0-9]/g, "-") || `dept-${Date.now()}`;
-          deleteDepartment(deptId).catch(err => console.error("Database sync error:", err));
+          deleteDepartment(deptId).catch(err => { console.error("Database sync error:", err); triggerToast("Couldn't save changes — please reload and try again."); });
         });
       }
       
@@ -216,7 +262,7 @@ export default function App() {
   const [superAdminPin, setSuperAdminPin] = useState<string>(() => localStorage.getItem("tealoan_superadmin_pin") || "admin123");
 
   const handleUnlockSuperAdmin = (pin: string) => {
-    if (pin.trim() === superAdminPin || pin.trim() === "admin123" || pin.trim() === "superadmin") {
+    if (pin.trim() === superAdminPin) {
       setIsSuperAdmin(true);
       localStorage.setItem("tealoan_superadmin", "true");
       triggerToast("Superadmin privileges granted.");
@@ -338,25 +384,17 @@ export default function App() {
             rawSetDepartments(freshDepts.length > 0 ? freshDepts : defaultDepts);
             rawSetSubscriptions(freshSubs.length > 0 ? freshSubs : INITIAL_SUBSCRIPTIONS);
           } else {
-            // Apply database loaded states
-            if (dbDevices.length > 0) rawSetDevices(dbDevices);
-            if (dbCategories.length > 0) rawSetCategories(dbCategories);
-            if (dbDepartments.length > 0) rawSetDepartments(dbDepartments);
-            if (dbStaff.length > 0) {
-              rawSetStaffMembers(dbStaff);
-            } else {
-              // Seed STAFF_MEMBERS if staff table was empty
-              for (const staff of STAFF_MEMBERS) {
-                await saveStaff(staff);
-              }
-              const seededStaff = await fetchStaff();
-              rawSetStaffMembers(seededStaff.length > 0 ? seededStaff : STAFF_MEMBERS);
-            }
-            rawSetSubscriptions(dbSubscriptions.length > 0 ? dbSubscriptions : INITIAL_SUBSCRIPTIONS);
+            // Apply database loaded states exactly as the server returned them
+            rawSetDevices(dbDevices);
+            rawSetCategories(dbCategories);
+            rawSetDepartments(dbDepartments);
+            rawSetStaffMembers(dbStaff);
+            rawSetSubscriptions(dbSubscriptions);
           }
         } catch (err) {
           console.error("Failed to load and seed database:", err);
           if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+            clearCachedData();
             setAccessDenied(currentUser.email ?? "This account");
           } else {
             triggerToast("Error connecting to cloud database.");
@@ -365,6 +403,12 @@ export default function App() {
           setIsAuthLoading(false);
         }
       } else {
+        // Signed out: don't keep a previous user's data in memory
+        rawSetDevices([]);
+        rawSetCategories([]);
+        rawSetStaffMembers([]);
+        rawSetDepartments([]);
+        rawSetSubscriptions([]);
         setIsAuthLoading(false);
       }
     });
@@ -646,7 +690,7 @@ export default function App() {
 
   // CLEAR ALL DATA: Entirely wipes the device catalog
   const handleClearAllData = () => {
-    if (confirm("Are you absolutely sure you want to remove all data from the database? This will delete all devices and checkout history completely. This action cannot be undone.")) {
+    if (confirm("Delete ALL devices and their checkout history from the database? Staff, categories, departments and subscriptions are kept. This cannot be undone.")) {
       setDevices([]);
       setSelectedDeviceId(null);
       triggerToast("All data successfully removed from database.");
@@ -706,7 +750,7 @@ export default function App() {
       <div className="min-h-screen bg-warm-gray-50 flex flex-col items-center justify-center font-sans">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 text-matcha-600 animate-spin" />
-          <p className="text-xs font-semibold text-warm-gray-800">Synchronizing cloud database...</p>
+          <p className="text-xs font-semibold text-warm-gray-800">Loading inventory...</p>
         </div>
       </div>
     );
@@ -723,7 +767,7 @@ export default function App() {
           <div className="space-y-1">
             <h1 className="font-bold text-xl text-warm-gray-900 tracking-tight font-display">Mavis Device Inventory</h1>
             <p className="text-[10px] uppercase font-bold tracking-wider text-matcha-700 bg-matcha-100/50 px-2 py-0.5 rounded-full inline-block">
-              Cloud Secured Admin Hub
+              Admin Hub
             </p>
           </div>
 
@@ -731,17 +775,21 @@ export default function App() {
             <p>Team Hardware Loan & Appliance Inventory Management.</p>
             <div className="flex items-center justify-center gap-1.5 text-matcha-700 font-medium bg-matcha-50/50 py-1.5 rounded-lg text-[11px]">
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span>Google SSO & Cloud Sync Active</span>
+              <span>Google sign-in required</span>
             </div>
           </div>
 
           <button
-            onClick={signInWithGoogle}
-            className="w-full inline-flex items-center justify-center gap-2 bg-matcha-600 hover:bg-matcha-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-colors cursor-pointer group active:scale-98 shadow-xs"
+            onClick={handleGoogleSignIn}
+            disabled={isSigningIn}
+            className="w-full inline-flex items-center justify-center gap-2 bg-matcha-600 hover:bg-matcha-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-colors cursor-pointer group active:scale-98 shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <LogIn className="h-3.5 w-3.5" />
             <span>Sign in with Google</span>
           </button>
+          {signInError && (
+            <p className="text-xs text-red-600 text-center" role="alert">{signInError}</p>
+          )}
         </div>
       </div>
     );
@@ -767,7 +815,7 @@ export default function App() {
           </div>
 
           <button
-            onClick={logoutUser}
+            onClick={handleSignOut}
             className="w-full inline-flex items-center justify-center gap-2 bg-matcha-600 hover:bg-matcha-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-colors cursor-pointer group active:scale-98 shadow-xs"
           >
             <LogOut className="h-3.5 w-3.5" />
@@ -858,7 +906,7 @@ export default function App() {
                 Add Device
               </button>
               <button
-                onClick={logoutUser}
+                onClick={handleSignOut}
                 className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-1.5 rounded-lg border border-rose-100 transition-colors cursor-pointer text-xs font-semibold shadow-xs"
                 title="Sign Out of Inventory Hub"
               >
@@ -1313,15 +1361,7 @@ export default function App() {
       {/* Footer */}
       <footer className="bg-white border-t border-matcha-100 mt-12 py-6 text-center text-xs text-warm-gray-800">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <p>&copy; 2026 Device Inventory. Secure local persistence enabled.</p>
-          <div className="flex gap-4 font-medium">
-            <span className="flex items-center gap-1">
-              <CheckCircle2 className="h-3.5 w-3.5 text-matcha-600" />
-              Responsive Iframe Safe
-            </span>
-            <span className="opacity-40">|</span>
-            <span className="text-matcha-800">Matcha Green Theme v2.0</span>
-          </div>
+          <p>&copy; 2026 Mavis Device Inventory</p>
         </div>
       </footer>
 

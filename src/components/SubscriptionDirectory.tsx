@@ -11,14 +11,11 @@ import {
   EyeOff, 
   Key, 
   Calendar, 
-  CreditCard, 
-  Tag, 
   User, 
   FileText, 
   Edit3, 
   Trash2, 
   ShieldCheck, 
-  AlertTriangle, 
   Clock, 
   Sparkles, 
   Download, 
@@ -303,16 +300,16 @@ export default function SubscriptionDirectory({
 
         <div className="bg-white border border-warm-gray-200 rounded-xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-warm-gray-500 uppercase tracking-wider">Cloud Security</span>
+            <span className="text-xs font-medium text-warm-gray-500 uppercase tracking-wider">Security</span>
             <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
               <ShieldCheck className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline">
             <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-              Encrypted Sync
+              Access control
             </span>
-            <span className="ml-2 text-[11px] text-warm-gray-500">Server-verified sign-in</span>
+            <span className="ml-2 text-[11px] text-warm-gray-500">Google sign-in required</span>
           </div>
         </div>
       </div>

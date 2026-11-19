@@ -17,7 +17,6 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Eye
 } from "lucide-react";
 
 interface DeviceTableProps {

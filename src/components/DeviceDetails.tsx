@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
-import { Device, StaffMember, LoanRecord, DeviceCondition, DeviceStatus, EmploymentStatus, EMPLOYMENT_STATUSES } from "../types";
+import { Device, StaffMember, LoanRecord, DeviceCondition, EmploymentStatus, EMPLOYMENT_STATUSES } from "../types";
 import { formatFriendlyDate, getLoanRemainingDays, SYSTEM_TODAY, parseDate, getEmploymentStatusMeta } from "../utils";
 import { 
   X, 
-  Calendar, 
   User, 
   Mail, 
   Building, 
@@ -18,11 +17,8 @@ import {
   Edit,
   ClipboardList,
   MapPin,
-  Tag,
   CornerDownLeft,
   ShieldCheck,
-  ShieldAlert,
-  KeyRound
 } from "lucide-react";
 
 interface DeviceDetailsProps {
@@ -1046,7 +1042,7 @@ export default function DeviceDetails({
               onSubmit={(e) => {
                 e.preventDefault();
                 const cleanPin = pinInput.trim();
-                if (cleanPin === superAdminPin || cleanPin === "admin123" || cleanPin === "superadmin") {
+                if (cleanPin === superAdminPin) {
                   onUnlockSuperAdmin?.(cleanPin);
                   onDeleteHistoryRecord?.(device.id, deletingRecordId);
                   setDeletingRecordId(null);
@@ -1061,7 +1057,7 @@ export default function DeviceDetails({
               <div>
                 <input
                   type="password"
-                  placeholder="Enter Superadmin Passcode (default: admin123)"
+                  placeholder="Enter Superadmin Passcode"
                   value={pinInput}
                   onChange={(e) => { setPinInput(e.target.value); setPinError(false); }}
                   className={`w-full text-xs p-2.5 rounded-lg border ${pinError ? 'border-rose-500 ring-2 ring-rose-200' : 'border-warm-gray-200'} focus:outline-none focus:ring-2 focus:ring-amber-500`}

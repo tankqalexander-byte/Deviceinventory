@@ -127,10 +127,17 @@ async function main() {
     } catch (e) { next(e); }
   });
 
+  // Same answers as the Cloudflare Worker for unsupported methods / paths.
+  api.all("/:collection", (req, res) =>
+    ROUTES[req.params.collection] ? res.status(405).json({ error: "Method not allowed" }) : res.status(404).json({ error: "Unknown collection" }));
+  api.all("/:collection/:id", (_req, res) => res.status(405).json({ error: "Method not allowed" }));
+  api.use((_req, res) => res.status(404).json({ error: "Unknown collection" }));
+
   app.use("/api", api);
   app.use("/api", (err: any, _req: Request, res: Response, _next: NextFunction) => {
     if (err?.type === "entity.parse.failed") return res.status(400).json({ error: "Malformed JSON" });
     if (err?.type === "entity.too.large") return res.status(413).json({ error: "Request too large" });
+    if (err instanceof URIError || err?.status === 400) return res.status(400).json({ error: "invalid document id" });
     console.error("API error:", err);
     res.status(500).json({ error: "Internal server error" });
   });
@@ -147,7 +154,7 @@ async function main() {
   }
 
   const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Device Inventory listening on http://localhost:${PORT}`);
+    console.log(`Mavis Device Inventory listening on http://localhost:${PORT}`);
     console.log(`Database: ${db.description}${authDisabled ? "  [AUTH DISABLED]" : ""}`);
   });
 
