@@ -1,0 +1,104 @@
+{
+  "entities": {
+    "Device": {
+      "title": "Device",
+      "description": "A hardware device in the inventory catalog",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "model": { "type": "string" },
+        "serialNumber": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["available", "loaned", "maintenance", "retired"] },
+        "condition": { "type": "string", "enum": ["Excellent", "Good", "Fair", "Needs Service"] },
+        "purchaseDate": { "type": "string" },
+        "location": { "type": "string" },
+        "image": { "type": "string" },
+        "notes": { "type": "string" },
+        "currentLoan": { "type": "object" },
+        "history": { "type": "array" }
+      },
+      "required": ["id", "name", "model", "serialNumber", "category", "status", "condition", "purchaseDate", "location", "image", "history"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "An eligible staff member who can borrow devices",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "department": { "type": "string" },
+        "employmentStatus": {
+          "type": "string",
+          "enum": ["Full-Time", "Part-Time", "Contractor", "Intern", "On Leave", "Offboarded"]
+        },
+        "avatarUrl": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "department", "avatarUrl"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "A customizable device category in the inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "A customizable staff department",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "A service provider or subscription account record directory item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "renewalDate": { "type": "string" },
+        "remarks": { "type": "string" },
+        "category": { "type": "string" },
+        "cost": { "type": "number" },
+        "billingCycle": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "url", "username", "password", "renewalDate"]
+    }
+  },
+  "firestore": {
+    "devices": {
+      "schema": "Device",
+      "description": "Store all devices with checkout histories"
+    },
+    "categories": {
+      "schema": "Category",
+      "description": "Customizable device categories"
+    },
+    "departments": {
+      "schema": "Department",
+      "description": "Customizable staff departments"
+    },
+    "staffMembers": {
+      "schema": "StaffMember",
+      "description": "List of staff members registered to check out items"
+    },
+    "subscriptions": {
+      "schema": "Subscription",
+      "description": "Directory of subscriptions and service provider account records"
+    }
+  }
+}

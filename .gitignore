@@ -1,0 +1,13 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+dist-server/
+# Embedded database (local development)
+data/
+# Firestore snapshots contain staff details and passwords
+firestore-export*.json

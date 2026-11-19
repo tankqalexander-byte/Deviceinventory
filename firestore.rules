@@ -1,0 +1,189 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (default deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn();
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- ENTITY SCHEMA VALIDATORS ---
+    function isValidDevice(data) {
+      return data.keys().hasAll(['id', 'name', 'model', 'serialNumber', 'category', 'status', 'condition', 'purchaseDate', 'location', 'image', 'history'])
+        && data.keys().size() <= 15
+        && data.id is string && data.id.size() <= 100
+        && data.name is string && data.name.size() <= 100
+        && data.model is string && data.model.size() <= 100
+        && data.serialNumber is string && data.serialNumber.size() <= 100
+        && data.category is string && data.category.size() <= 100
+        && data.status in ['available', 'loaned', 'maintenance', 'retired']
+        && data.condition in ['Excellent', 'Good', 'Fair', 'Needs Service']
+        && data.purchaseDate is string && data.purchaseDate.size() <= 20
+        && data.location is string && data.location.size() <= 100
+        && data.image is string && data.image.size() <= 100
+        && data.history is list
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000))
+        && (!('currentLoan' in data) || (data.currentLoan is map));
+    }
+
+    function isValidStaffMember(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'department', 'avatarUrl'])
+        && data.keys().hasOnly(['id', 'name', 'email', 'department', 'avatarUrl', 'employmentStatus'])
+        && data.id is string && data.id.size() <= 100
+        && data.name is string && data.name.size() <= 100
+        && data.email is string && data.email.size() <= 100
+        && data.department is string && data.department.size() <= 100
+        && data.avatarUrl is string && data.avatarUrl.size() <= 2000
+        && (!('employmentStatus' in data) || data.employmentStatus in ['Full-Time', 'Part-Time', 'Contractor', 'Intern', 'On Leave', 'Offboarded']);
+    }
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['id', 'name'])
+        && data.keys().size() == 2
+        && data.id is string && data.id.size() <= 100
+        && data.name is string && data.name.size() <= 100;
+    }
+
+    function isValidDepartment(data) {
+      return data.keys().hasAll(['id', 'name'])
+        && data.keys().size() == 2
+        && data.id is string && data.id.size() <= 100
+        && data.name is string && data.name.size() <= 100;
+    }
+
+    function isValidSubscription(data) {
+      return data.keys().hasAll(['id', 'name', 'url', 'username', 'password', 'renewalDate'])
+        && data.keys().size() <= 12
+        && data.id is string && data.id.size() <= 100
+        && data.name is string && data.name.size() <= 150
+        && data.url is string && data.url.size() <= 500
+        && data.username is string && data.username.size() <= 200
+        && data.password is string && data.password.size() <= 200
+        && data.renewalDate is string && data.renewalDate.size() <= 20
+        && (!('remarks' in data) || (data.remarks is string && data.remarks.size() <= 1000))
+        && (!('category' in data) || (data.category is string && data.category.size() <= 100))
+        && (!('cost' in data) || (data.cost is number))
+        && (!('billingCycle' in data) || (data.billingCycle is string && data.billingCycle.size() <= 50))
+        && (!('contactPerson' in data) || (data.contactPerson is string && data.contactPerson.size() <= 150))
+        && (!('status' in data) || (data.status is string && data.status.size() <= 50));
+    }
+
+    // --- COLLECTION RULES ---
+
+    // 1. Devices Collection
+    match /devices/{deviceId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() 
+        && isValidId(deviceId) 
+        && isValidDevice(incoming())
+        && incoming().id == deviceId;
+        
+      allow update: if isEmailVerified()
+        && isValidId(deviceId)
+        && isValidDevice(incoming())
+        && incoming().id == existing().id
+        && incoming().purchaseDate == existing().purchaseDate
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'model', 'serialNumber', 'category', 'status', 'condition', 'location', 'image', 'notes', 'currentLoan', 'history'
+          ])
+        );
+        
+      allow delete: if isEmailVerified() && isValidId(deviceId);
+    }
+
+    // 2. Staff Members Collection
+    match /staffMembers/{staffId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified()
+        && isValidId(staffId)
+        && isValidStaffMember(incoming())
+        && incoming().id == staffId;
+        
+      allow update: if isEmailVerified()
+        && isValidId(staffId)
+        && isValidStaffMember(incoming())
+        && incoming().id == existing().id
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'department', 'employmentStatus', 'avatarUrl'])
+        );
+        
+      allow delete: if isEmailVerified() && isValidId(staffId);
+    }
+
+    // 3. Categories Collection
+    match /categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified()
+        && isValidId(categoryId)
+        && isValidCategory(incoming())
+        && incoming().id == categoryId;
+        
+      allow update: if isEmailVerified()
+        && isValidId(categoryId)
+        && isValidCategory(incoming())
+        && incoming().id == existing().id
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['name'])
+        );
+        
+      allow delete: if isEmailVerified() && isValidId(categoryId);
+    }
+
+    // 4. Departments Collection
+    match /departments/{departmentId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified()
+        && isValidId(departmentId)
+        && isValidDepartment(incoming())
+        && incoming().id == departmentId;
+        
+      allow update: if isEmailVerified()
+        && isValidId(departmentId)
+        && isValidDepartment(incoming())
+        && incoming().id == existing().id
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['name'])
+        );
+        
+      allow delete: if isEmailVerified() && isValidId(departmentId);
+    }
+
+    // 5. Subscriptions / Service Providers Directory Collection
+    match /subscriptions/{subscriptionId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified()
+        && isValidId(subscriptionId)
+        && isValidSubscription(incoming())
+        && incoming().id == subscriptionId;
+        
+      allow update: if isEmailVerified()
+        && isValidId(subscriptionId)
+        && isValidSubscription(incoming())
+        && incoming().id == existing().id;
+        
+      allow delete: if isEmailVerified() && isValidId(subscriptionId);
+    }
+  }
+}
