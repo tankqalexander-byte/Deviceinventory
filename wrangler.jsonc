@@ -26,7 +26,7 @@
   // Google accounts allowed to use the app: comma-separated emails and/or
   // "@domain.com" entries. Empty = nobody can get in.
   "vars": {
-    "ALLOWED_EMAILS": ""
+    "ALLOWED_EMAILS": "tan.kq.alexander@gmail.com"
   },
   "observability": {
     "enabled": true
