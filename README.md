@@ -91,6 +91,22 @@ column that keeps anything that doesn't fit a column (unknown fields, values of
 an unexpected type), so any record reads back exactly as it was in Firestore.
 For the current data `extra` is empty.
 
+## Scanned loan forms (Google Drive)
+
+Scanned "Digital Asset Issuance" forms (PDF or photo) go into the Google Drive folder **Equipment Loan Out**. A scheduled task checks that folder every hour from 8am to 8pm (Singapore time).
+
+For each form, the task reads the devices, serial numbers, borrower and dates. It records the checkout in the app. Once the "Date of Return" line is filled in, it records the return instead.
+
+Files it recorded move to **Equipment Loan Out / Processed**. Files it could not match with certainty move to **Needs review**. That covers an unclear serial, an unknown device or borrower, or a device on loan to someone else. Nothing in the app changes for these. The file's Drive description says why. Fix the issue (e.g. add the device), then move the file back into **Equipment Loan Out** to retry.
+
+Safety:
+
+- The app refuses a loan unless the serial written on the form matches the device. Look-alike characters such as 0/O and 1/I are allowed. Ambiguous matches are refused.
+- The app never touches a device on loan to someone else.
+- The app ignores a form it has already recorded.
+
+The task uses its own key on `/api/automation/context` (devices and staff only, no subscriptions) and `/api/automation/loan-form`. Only a SHA-256 fingerprint of the key is in `wrangler.jsonc` (`AUTOMATION_KEY_SHA256`). Empty it to switch the automation off. To issue a new key, generate a random string, put its SHA-256 there, and update the scheduled task.
+
 ## API
 
 All routes require a Firebase ID token (`Authorization: Bearer <token>`) from a
@@ -105,6 +121,8 @@ that aren't approved get `403`.
 | GET | `/api/<collection>/<id>` | one record |
 | PUT | `/api/<collection>/<id>` | create or replace (validated like `firestore.rules`) |
 | DELETE | `/api/<collection>/<id>` | delete |
+| GET | `/api/automation/context` | automation key; devices and staff for matching forms |
+| POST | `/api/automation/loan-form` | automation key; record one checkout or return from a form |
 
 While the Cloudflare version copies data from Firestore on its first run, the API answers `503` with a `Retry-After` header; the app retries automatically.
 
