@@ -12,6 +12,8 @@ import { openDb } from "./db.ts";
 import { deleteRecord, getRecord, listRecords, putRecord } from "./repo.ts";
 import { validateWrite, isValidId } from "./validation.ts";
 import { checkAccess } from "./access.ts";
+import { createHash } from "node:crypto";
+import { applyLoanForm, otherSerialMatches, buildContext, safeEqualHex, validateInput } from "./automation.ts";
 import type { CollectionName } from "./snapshot.ts";
 import firebaseConfig from "../firebase-applet-config.json" with { type: "json" };
 
@@ -72,6 +74,48 @@ async function main() {
       res.status(503).json({ ok: false });
     }
   });
+
+  // Loan-form automation (scheduled task): separate key, limited endpoints.
+  const automation = express.Router();
+  automation.use(express.json({ limit: "1mb" }));
+  automation.use((req, res, next) => {
+    const expected = (process.env.AUTOMATION_KEY_SHA256 || "").toLowerCase();
+    const m = /^Bearer (.+)$/.exec(req.headers.authorization || "");
+    const got = m ? createHash("sha256").update(m[1]).digest("hex") : "";
+    if (!expected || !m || !safeEqualHex(got, expected)) return res.status(401).json({ error: "Invalid automation key" });
+    next();
+  });
+  automation.get("/context", async (_req, res, next) => {
+    try {
+      const devices = (await listRecords(db, "devices")).map((d) => d.data);
+      const staff = (await listRecords(db, "staffMembers")).map((d) => d.data);
+      res.json(buildContext(devices, staff));
+    } catch (e) { next(e); }
+  });
+  automation.post("/loan-form", async (req, res, next) => {
+    const input = validateInput(req.body);
+    if (typeof input === "string") return res.status(400).json({ result: "rejected", message: input });
+    const today = new Date(Date.now() + 14 * 3600_000).toISOString().slice(0, 10);
+    try {
+      const outcome = await db.tx(async (q) => {
+        const device = await getRecord(q, "devices", input.deviceId);
+        const staff = await getRecord(q, "staffMembers", input.staffId);
+        const twins = otherSerialMatches((await listRecords(q, "devices")).map((d) => d.data), input.deviceId, input.serialAsWritten);
+        if (twins.length) return { status: 409 as const, result: "conflict" as const, message: `Serial "${input.serialAsWritten}" could also be ${twins.map((d) => `${d.name} (${d.serialNumber})`).join(", ")}; not changed.` };
+        const r = applyLoanForm(device, staff, input, today);
+        if (r.status === 200 && r.result === "applied" && r.device) {
+          const err = validateWrite("devices", input.deviceId, r.device, device);
+          if (err) return { status: 422 as const, result: "rejected" as const, message: `Update refused by validation: ${err}` };
+          await putRecord(q, "devices", input.deviceId, r.device);
+        }
+        return r;
+      });
+      const { device: _d, ...publicResult } = outcome as any;
+      res.status(outcome.status).json(publicResult);
+    } catch (e) { next(e); }
+  });
+  automation.use((_req, res) => res.status(404).json({ error: "Unknown automation endpoint" }));
+  app.use("/api/automation", automation);
 
   const api = express.Router();
   api.use(express.json({ limit: "5mb" }));

@@ -37,6 +37,8 @@ export interface LoanRecord {
   notes?: string;
   status: "active" | "returned" | "overdue";
   conditionOnReturn?: DeviceCondition;
+  formFileId?: string; // Google Drive file of the scanned issuance form (automation)
+  returnFormFileId?: string; // Google Drive file of the scanned return form (automation)
 }
 
 export interface Device {
