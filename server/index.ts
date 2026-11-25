@@ -12,6 +12,7 @@ import { openDb } from "./db.ts";
 import { deleteRecord, getRecord, listRecords, putRecord } from "./repo.ts";
 import { validateWrite, isValidId } from "./validation.ts";
 import { checkAccess } from "./access.ts";
+import { EncryptionKeyError, encryptExistingSubscriptions, importDataKey, readAll, readOne, toStored } from "./fieldCrypto.ts";
 import { createHash } from "node:crypto";
 import { applyLoanForm, otherSerialMatches, buildContext, safeEqualHex, validateInput, planNewDevice, validateNewDeviceInput } from "./automation.ts";
 import type { CollectionName } from "./snapshot.ts";
@@ -63,13 +64,19 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 // --- App --------------------------------------------------------------------
 async function main() {
   const db = await openDb();
+  // Encryption at rest for subscription usernames/passwords (see server/fieldCrypto.ts).
+  const dataKey = process.env.DATA_ENCRYPTION_KEY ? await importDataKey(process.env.DATA_ENCRYPTION_KEY) : null;
+  if (dataKey) {
+    const n = await encryptExistingSubscriptions(db, dataKey);
+    if (n) console.log(`Encrypted saved logins/passwords of ${n} subscription(s).`);
+  }
   const app = express();
   app.disable("x-powered-by");
 
   app.get("/api/health", async (_req, res) => {
     try {
       await db.query("SELECT 1");
-      res.json({ ok: true });
+      res.json({ ok: true, encryption: dataKey ? "on" : "off" });
     } catch {
       res.status(503).json({ ok: false });
     }
@@ -149,7 +156,7 @@ async function main() {
     const c = collectionOf(req, res);
     if (!c) return;
     try {
-      res.json((await listRecords(db, c)).map((d) => d.data));
+      res.json(await readAll(db, c, dataKey));
     } catch (e) { next(e); }
   });
 
@@ -157,7 +164,7 @@ async function main() {
     const c = collectionOf(req, res);
     if (!c) return;
     try {
-      const doc = await getRecord(db, c, req.params.id);
+      const doc = await readOne(db, c, req.params.id, dataKey);
       doc ? res.json(doc) : res.status(404).json({ error: "Not found" });
     } catch (e) { next(e); }
   });
@@ -169,10 +176,10 @@ async function main() {
     const id = req.params.id;
     try {
       const status = await db.tx(async (q) => {
-        const existing = await getRecord(q, c, id);
+        const existing = await readOne(q, c, id, dataKey);
         const err = validateWrite(c, id, req.body, existing);
         if (err) return err;
-        await putRecord(q, c, id, req.body);
+        await putRecord(q, c, id, await toStored(c, id, req.body, dataKey));
         return null;
       });
       status ? res.status(400).json({ error: status }) : res.status(204).end();
@@ -200,6 +207,7 @@ async function main() {
     if (err?.type === "entity.parse.failed") return res.status(400).json({ error: "Malformed JSON" });
     if (err?.type === "entity.too.large") return res.status(413).json({ error: "Request too large" });
     if (err instanceof URIError || err?.status === 400) return res.status(400).json({ error: "invalid document id" });
+    if (err instanceof EncryptionKeyError) return res.status(500).json({ error: err.message });
     console.error("API error:", err);
     res.status(500).json({ error: "Internal server error" });
   });

@@ -8,6 +8,7 @@ import type { CollectionName } from "../server/snapshot.ts";
 import { deleteRecord, getRecord, listRecords, putRecord } from "../server/repo.ts";
 import { validateWrite, isValidId } from "../server/validation.ts";
 import { checkAccess, type AccessResult } from "../server/access.ts";
+import { EncryptionKeyError, encryptExistingSubscriptions, importDataKey, readAll, readOne, toStored } from "../server/fieldCrypto.ts";
 import { applyLoanForm, otherSerialMatches, buildContext, safeEqualHex, validateInput, planNewDevice, validateNewDeviceInput } from "../server/automation.ts";
 import { d1Db, ensureSchema } from "./d1.ts";
 import { ensureImported, ImportPending } from "./import.ts";
@@ -18,6 +19,7 @@ export interface Env {
   AUTH_DISABLED?: string;
   ALLOWED_EMAILS?: string;
   AUTOMATION_KEY_SHA256?: string;
+  DATA_ENCRYPTION_KEY?: string; // Cloudflare secret (see server/fieldCrypto.ts)
 }
 
 const ROUTES: Record<string, CollectionName> = {
@@ -53,12 +55,14 @@ async function authorize(req: Request, env: Env): Promise<AuthOutcome> {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
+let existingEncrypted = false; // per Worker instance
+
 async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === "/api/health") {
     try {
       await ensureSchema(env.DB);
       await env.DB.prepare("SELECT 1").first();
-      return json({ ok: true });
+      return json({ ok: true, encryption: env.DATA_ENCRYPTION_KEY ? "on" : "off" });
     } catch {
       return json({ ok: false }, 503);
     }
@@ -82,6 +86,22 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
     throw err;
   }
 
+  // Encryption at rest for subscription usernames/passwords (once the secret is set).
+  let dataKey: CryptoKey | null = null;
+  try {
+    if (env.DATA_ENCRYPTION_KEY) {
+      dataKey = await importDataKey(env.DATA_ENCRYPTION_KEY);
+      if (!existingEncrypted) {
+        const n = await encryptExistingSubscriptions(db, dataKey);
+        if (n) console.log(`Encrypted saved logins/passwords of ${n} subscription(s).`);
+        existingEncrypted = true;
+      }
+    }
+  } catch (err) {
+    console.error("Encryption setup failed:", err);
+    return json({ error: err instanceof EncryptionKeyError ? err.message : "Encryption setup failed" }, 500);
+  }
+
   const [, , segment, rawId, ...rest] = url.pathname.split("/");
   const c = ROUTES[segment];
   if (!c || rest.length) return json({ error: "Unknown collection" }, 404);
@@ -94,12 +114,12 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
 
   if (id === undefined || id === "") {
     if (req.method !== "GET") return json({ error: "Method not allowed" }, 405);
-    return json((await listRecords(db, c)).map((d) => d.data));
+    return json(await readAll(db, c, dataKey));
   }
 
   switch (req.method) {
     case "GET": {
-      const doc = await getRecord(db, c, id);
+      const doc = await readOne(db, c, id, dataKey);
       return doc ? json(doc) : json({ error: "Not found" }, 404);
     }
     case "PUT": {
@@ -111,9 +131,9 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
         return json({ error: "Malformed JSON" }, 400);
       }
       const error = await db.tx(async (q) => {
-        const existing = await getRecord(q, c, id);
+        const existing = await readOne(q, c, id, dataKey);
         const err = validateWrite(c, id, body, existing);
-        if (!err) await putRecord(q, c, id, body as Record<string, unknown>);
+        if (!err) await putRecord(q, c, id, await toStored(c, id, body as Record<string, unknown>, dataKey));
         return err;
       });
       return error ? json({ error }, 400) : new Response(null, { status: 204 });
@@ -201,6 +221,7 @@ export default {
       try {
         return await handleApi(req, env, url);
       } catch (err) {
+        if (err instanceof EncryptionKeyError) return json({ error: err.message }, 500);
         console.error("API error:", err);
         return json({ error: "Internal server error" }, 500);
       }
