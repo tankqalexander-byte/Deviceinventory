@@ -73,6 +73,7 @@ export interface Subscription {
   cost?: number;
   billingCycle?: BillingCycle;
   contactPerson?: string;
-  status?: "Active" | "Pending Renewal" | "Cancelled" | "Paused";
+  status?: SubscriptionStatus;
 }
 
+export type SubscriptionStatus = "Active" | "Pending Renewal" | "Pending Cancellation" | "Cancelled" | "Paused";

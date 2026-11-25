@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Subscription, SubscriptionCategory, BillingCycle } from "../types";
+import { Subscription, SubscriptionCategory, BillingCycle, SubscriptionStatus } from "../types";
 import { SYSTEM_TODAY, formatFriendlyDate, parseDate } from "../utils";
 import { 
   Search, 
@@ -24,7 +24,8 @@ import {
   List, 
   Globe, 
   Lock,
-  DollarSign
+  DollarSign,
+  XCircle
 } from "lucide-react";
 
 interface SubscriptionDirectoryProps {
@@ -46,6 +47,29 @@ export const CATEGORIES: SubscriptionCategory[] = [
 
 export const BILLING_CYCLES: BillingCycle[] = ["Monthly", "Annual", "Biennially", "Quarterly", "One-time"];
 
+export const SUBSCRIPTION_STATUSES: SubscriptionStatus[] = ["Active", "Pending Renewal", "Pending Cancellation", "Paused", "Cancelled"];
+
+const StatusTag = ({ sub }: { sub: Subscription }) => {
+  const status = sub.status || "Active";
+  if (status === "Active") return null;
+  const base = "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border";
+  if (status === "Pending Cancellation") {
+    return (
+      <span className={`${base} bg-rose-50 text-rose-700 border-rose-200`}>
+        <XCircle className="h-3 w-3 shrink-0" />
+        Pending cancellation{sub.renewalDate ? ` · cancel by ${formatFriendlyDate(sub.renewalDate)}` : ""}
+      </span>
+    );
+  }
+  if (status === "Pending Renewal") {
+    return <span className={`${base} bg-amber-50 text-amber-700 border-amber-200`}>Pending renewal</span>;
+  }
+  if (status === "Paused") {
+    return <span className={`${base} bg-slate-100 text-slate-600 border-slate-200`}>Paused</span>;
+  }
+  return <span className={`${base} bg-warm-gray-100 text-warm-gray-500 border-warm-gray-200`}><span className="line-through">Cancelled</span></span>;
+};
+
 export default function SubscriptionDirectory({
   subscriptions,
   onAddSubscription,
@@ -56,7 +80,7 @@ export default function SubscriptionDirectory({
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
-  const [renewalFilter, setRenewalFilter] = useState<"All" | "Urgent" | "Upcoming" | "Active">("All");
+  const [renewalFilter, setRenewalFilter] = useState<"All" | "Urgent" | "Upcoming" | "Active" | "PendingCancellation">("All");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
 
   // Show/Hide password tracking per subscription ID
@@ -121,12 +145,15 @@ export default function SubscriptionDirectory({
 
     const days = getDaysUntilRenewal(sub.renewalDate);
     let matchesRenewal = true;
+    const isCancelled = sub.status === "Cancelled";
     if (renewalFilter === "Urgent") {
-      matchesRenewal = days < 7;
+      matchesRenewal = !isCancelled && days < 7;
     } else if (renewalFilter === "Upcoming") {
-      matchesRenewal = days >= 0 && days <= 30;
+      matchesRenewal = !isCancelled && days >= 0 && days <= 30;
     } else if (renewalFilter === "Active") {
       matchesRenewal = days > 30;
+    } else if (renewalFilter === "PendingCancellation") {
+      matchesRenewal = sub.status === "Pending Cancellation";
     }
 
     return matchesSearch && matchesCategory && matchesRenewal;
@@ -134,9 +161,9 @@ export default function SubscriptionDirectory({
 
   // Calculate Metrics
   const totalCount = subscriptions.length;
-  const urgentRenewals = subscriptions.filter(s => getDaysUntilRenewal(s.renewalDate) <= 14).length;
+  const urgentRenewals = subscriptions.filter(s => s.status !== "Cancelled" && getDaysUntilRenewal(s.renewalDate) <= 14).length;
   const totalMonthlySpend = subscriptions.reduce((acc, s) => {
-    if (!s.cost) return acc;
+    if (!s.cost || s.status === "Cancelled") return acc;
     if (s.billingCycle === "Monthly") return acc + s.cost;
     if (s.billingCycle === "Annual") return acc + (s.cost / 12);
     if (s.billingCycle === "Biennially") return acc + (s.cost / 24);
@@ -227,7 +254,7 @@ export default function SubscriptionDirectory({
 
   // Export to CSV
   const handleExportCSV = () => {
-    const headers = ["Name", "URL", "Username", "Password", "Renewal Date", "Category", "Cost", "Billing Cycle", "Contact Person", "Remarks"];
+    const headers = ["Name", "URL", "Username", "Password", "Renewal Date", "Category", "Cost", "Billing Cycle", "Contact Person", "Remarks", "Status"];
     const rows = subscriptions.map(s => [
       `"${s.name.replace(/"/g, '""')}"`,
       `"${s.url.replace(/"/g, '""')}"`,
@@ -238,7 +265,8 @@ export default function SubscriptionDirectory({
       s.cost || 0,
       `"${s.billingCycle || ""}"`,
       `"${(s.contactPerson || "").replace(/"/g, '""')}"`,
-      `"${(s.remarks || "").replace(/"/g, '""')}"`
+      `"${(s.remarks || "").replace(/"/g, '""')}"`,
+      `"${s.status || "Active"}"`
     ]);
 
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
@@ -415,6 +443,12 @@ export default function SubscriptionDirectory({
             >
               Due &lt; 30 Days
             </button>
+            <button
+              onClick={() => setRenewalFilter("PendingCancellation")}
+              className={`px-2 py-0.5 text-[11px] font-medium rounded-md transition-colors cursor-pointer ${renewalFilter === "PendingCancellation" ? "bg-rose-50 text-rose-700 border border-rose-200" : "text-warm-gray-500 hover:text-warm-gray-800"}`}
+            >
+              Pending cancellation
+            </button>
           </div>
 
           {(selectedCategory !== "All" || renewalFilter !== "All" || searchQuery !== "") && (
@@ -460,7 +494,9 @@ export default function SubscriptionDirectory({
             const isPasswordVisible = !!visiblePasswords[sub.id];
 
             let badgeColor = "bg-matcha-50 text-matcha-700 border-matcha-200";
-            if (daysLeft < 0) {
+            if (sub.status === "Cancelled") {
+              badgeColor = "bg-warm-gray-50 text-warm-gray-500 border-warm-gray-200";
+            } else if (daysLeft < 0) {
               badgeColor = "bg-rose-100 text-rose-800 border-rose-300 font-bold";
             } else if (daysLeft <= 7) {
               badgeColor = "bg-rose-50 text-rose-700 border-rose-200 font-semibold";
@@ -471,7 +507,7 @@ export default function SubscriptionDirectory({
             return (
               <div
                 key={sub.id}
-                className="bg-white border border-warm-gray-200 hover:border-matcha-300 rounded-xl p-4 shadow-xs transition-all flex flex-col justify-between space-y-4"
+                className={`bg-white border border-warm-gray-200 hover:border-matcha-300 rounded-xl p-4 shadow-xs transition-all flex flex-col justify-between space-y-4 ${sub.status === "Cancelled" ? "opacity-60" : ""}`}
               >
                 {/* Header */}
                 <div>
@@ -481,6 +517,7 @@ export default function SubscriptionDirectory({
                         {sub.category || "Service Provider"}
                       </span>
                       <h4 className="text-sm font-bold text-warm-gray-900 leading-snug">{sub.name}</h4>
+                      {(sub.status || "Active") !== "Active" && <div className="mt-1"><StatusTag sub={sub} /></div>}
                     </div>
                     <div className="flex items-center gap-1">
                       <button
@@ -592,7 +629,9 @@ export default function SubscriptionDirectory({
                   </div>
 
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border ${badgeColor}`}>
-                    {daysLeft < 0
+                    {sub.status === "Cancelled"
+                      ? "No renewal"
+                      : daysLeft < 0
                       ? `Expired (${Math.abs(daysLeft)}d ago)`
                       : daysLeft === 0
                       ? "Renews Today!"
@@ -626,9 +665,10 @@ export default function SubscriptionDirectory({
                   const isPasswordVisible = !!visiblePasswords[sub.id];
 
                   return (
-                    <tr key={sub.id} className="hover:bg-warm-gray-50/80 transition-colors">
+                    <tr key={sub.id} className={`hover:bg-warm-gray-50/80 transition-colors ${sub.status === "Cancelled" ? "opacity-60" : ""}`}>
                       <td className="py-3 px-4 font-semibold text-warm-gray-900">
                         {sub.name}
+                        {(sub.status || "Active") !== "Active" && <span className="block mt-1"><StatusTag sub={sub} /></span>}
                         {sub.category && (
                           <span className="block text-[10px] font-normal text-warm-gray-400">
                             {sub.category}
@@ -690,8 +730,8 @@ export default function SubscriptionDirectory({
                           <span className="block text-warm-gray-800 font-medium">
                             {formatFriendlyDate(sub.renewalDate)}
                           </span>
-                          <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] ${daysLeft <= 14 ? "text-amber-700 font-semibold" : "text-warm-gray-500"}`}>
-                            {daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft} days remaining`}
+                          <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] ${sub.status !== "Cancelled" && daysLeft <= 14 ? "text-amber-700 font-semibold" : "text-warm-gray-500"}`}>
+                            {sub.status === "Cancelled" ? "No renewal" : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft} days remaining`}
                           </span>
                         </div>
                       </td>
@@ -886,6 +926,20 @@ export default function SubscriptionDirectory({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-warm-gray-700 font-semibold mb-1">Status</label>
+                <select
+                  value={formData.status || "Active"}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as SubscriptionStatus })}
+                  className="w-full px-3 py-2 border border-warm-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-matcha-500"
+                >
+                  {SUBSCRIPTION_STATUSES.map(st => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Contact Person */}
