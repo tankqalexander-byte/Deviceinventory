@@ -79,3 +79,12 @@ test("bad input is returned unchanged", () => {
 test("iteration cap leaves absurdly old dates unchanged rather than hanging", () => {
   assert.equal(effectiveRenewalDate({ ...base, renewalDate: "0001-01-01" }, "9999-12-31"), "0001-01-01");
 });
+
+test("effectiveRenewalDate returns empty string for empty renewal date", () => {
+  for (const autoRenew of [true, false]) {
+    assert.equal(
+      effectiveRenewalDate({ renewalDate: "", billingCycle: "Monthly", autoRenew, status: "Active" }, "2026-11-25"),
+      ""
+    );
+  }
+});

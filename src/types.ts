@@ -57,7 +57,7 @@ export interface Device {
   history: LoanRecord[];
 }
 
-export type SubscriptionCategory = "SaaS & Software" | "Cloud Infrastructure" | "Domain & Hosting" | "Telecom & Utilities" | "Security & Identity" | "Other";
+export type SubscriptionCategory = "SaaS & Software" | "Cloud Infrastructure" | "Domain & Hosting" | "Telecom & Utilities" | "Security & Identity" | "Credentials" | "Other";
 
 export type BillingCycle = "Monthly" | "Annual" | "Biennially" | "Quarterly" | "One-time";
 

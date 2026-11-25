@@ -44,8 +44,16 @@ export const CATEGORIES: SubscriptionCategory[] = [
   "Domain & Hosting",
   "Telecom & Utilities",
   "Security & Identity",
+  "Credentials",
   "Other"
 ];
+
+/** Credentials are logins with no renewal date. */
+export const isCredential = (sub: Pick<Subscription, "category">): boolean => sub.category === "Credentials";
+
+/** Whether a subscription has a usable renewal date (credentials and empty dates do not). */
+const hasRenewal = (sub: Pick<Subscription, "category" | "renewalDate">): boolean =>
+  !isCredential(sub) && !!sub.renewalDate;
 
 export const BILLING_CYCLES: BillingCycle[] = ["Monthly", "Annual", "Biennially", "Quarterly", "One-time"];
 
@@ -69,7 +77,7 @@ const StatusTag = ({ sub, nextRenewal }: { sub: Subscription; nextRenewal: strin
     return (
       <span className={`${base} bg-rose-50 text-rose-700 border-rose-200`}>
         <XCircle className="h-3 w-3 shrink-0" />
-        Pending cancellation{nextRenewal ? ` · cancel by ${formatFriendlyDate(nextRenewal)}` : ""}
+        Pending cancellation{nextRenewal && hasRenewal(sub) ? ` · cancel by ${formatFriendlyDate(nextRenewal)}` : ""}
       </span>
     );
   }
@@ -162,10 +170,11 @@ export default function SubscriptionDirectory({
     const days = getDaysUntilRenewal(nextRenewalOf(sub));
     let matchesRenewal = true;
     const isCancelled = sub.status === "Cancelled";
+    const dated = hasRenewal(sub);
     if (renewalFilter === "Urgent") {
-      matchesRenewal = !isCancelled && days < 7;
+      matchesRenewal = dated && !isCancelled && days < 7;
     } else if (renewalFilter === "Upcoming") {
-      matchesRenewal = !isCancelled && days >= 0 && days <= 30;
+      matchesRenewal = dated && !isCancelled && days >= 0 && days <= 30;
     } else if (renewalFilter === "Active") {
       matchesRenewal = days > 30;
     } else if (renewalFilter === "PendingCancellation") {
@@ -177,7 +186,7 @@ export default function SubscriptionDirectory({
 
   // Calculate Metrics
   const totalCount = subscriptions.length;
-  const urgentRenewals = subscriptions.filter(s => s.status !== "Cancelled" && getDaysUntilRenewal(nextRenewalOf(s)) <= 14).length;
+  const urgentRenewals = subscriptions.filter(s => hasRenewal(s) && s.status !== "Cancelled" && getDaysUntilRenewal(nextRenewalOf(s)) <= 14).length;
   const totalMonthlySpend = subscriptions.reduce((acc, s) => {
     if (!s.cost || s.status === "Cancelled") return acc;
     if (s.billingCycle === "Monthly") return acc + s.cost;
@@ -252,10 +261,12 @@ export default function SubscriptionDirectory({
     }
 
     const { autoRenew: formAutoRenew, ...restForm } = formData;
-    const autoRenewOn = !!formAutoRenew && formData.billingCycle !== "One-time";
+    const credential = isCredential(formData);
+    const autoRenewOn = !credential && !!formAutoRenew && formData.billingCycle !== "One-time";
     const payload: Omit<Subscription, "id"> = {
       ...restForm,
-      url: formattedUrl
+      url: formattedUrl,
+      renewalDate: credential ? "" : formData.renewalDate
     };
     // Only write autoRenew: true when on; write false only if the record already had the key
     if (autoRenewOn) {
@@ -286,14 +297,14 @@ export default function SubscriptionDirectory({
       `"${s.url.replace(/"/g, '""')}"`,
       `"${s.username.replace(/"/g, '""')}"`,
       `"${s.password.replace(/"/g, '""')}"`,
-      `"${s.renewalDate}"`,
+      `"${s.renewalDate || ""}"`,
       `"${s.category || ""}"`,
       s.cost || 0,
       `"${s.billingCycle || ""}"`,
       `"${(s.contactPerson || "").replace(/"/g, '""')}"`,
       `"${(s.remarks || "").replace(/"/g, '""')}"`,
       `"${s.status || "Active"}"`,
-      `"${nextRenewalOf(s)}"`,
+      `"${hasRenewal(s) ? nextRenewalOf(s) : ""}"`,
       `"${s.autoRenew ? "Yes" : "No"}"`
     ]);
 
@@ -522,8 +533,9 @@ export default function SubscriptionDirectory({
             const daysLeft = getDaysUntilRenewal(nextRenewal);
             const isPasswordVisible = !!visiblePasswords[sub.id];
 
+            const dated = hasRenewal(sub);
             let badgeColor = "bg-matcha-50 text-matcha-700 border-matcha-200";
-            if (sub.status === "Cancelled") {
+            if (sub.status === "Cancelled" || !dated) {
               badgeColor = "bg-warm-gray-50 text-warm-gray-500 border-warm-gray-200";
             } else if (daysLeft < 0) {
               badgeColor = "bg-rose-100 text-rose-800 border-rose-300 font-bold";
@@ -659,11 +671,17 @@ export default function SubscriptionDirectory({
                 <div className="pt-3 border-t border-warm-gray-100 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-1 text-warm-gray-500">
                     <Calendar className="h-3.5 w-3.5" />
-                    <span>Renew: {formatFriendlyDate(nextRenewal)}</span>
+                    <span>
+                      {dated
+                        ? `Renew: ${formatFriendlyDate(nextRenewal)}`
+                        : isCredential(sub)
+                        ? "Credential · no renewal"
+                        : "No renewal date"}
+                    </span>
                   </div>
 
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border ${badgeColor}`}>
-                    {sub.status === "Cancelled"
+                    {sub.status === "Cancelled" || !dated
                       ? "No renewal"
                       : daysLeft < 0
                       ? `Expired (${Math.abs(daysLeft)}d ago)`
@@ -697,6 +715,7 @@ export default function SubscriptionDirectory({
                 {filteredSubscriptions.map((sub) => {
                   const nextRenewal = nextRenewalOf(sub);
             const daysLeft = getDaysUntilRenewal(nextRenewal);
+                  const dated = hasRenewal(sub);
                   const isPasswordVisible = !!visiblePasswords[sub.id];
 
                   return (
@@ -768,10 +787,10 @@ export default function SubscriptionDirectory({
                       <td className="py-3 px-4">
                         <div className="space-y-0.5">
                           <span className="block text-warm-gray-800 font-medium">
-                            {formatFriendlyDate(nextRenewal)}
+                            {dated ? formatFriendlyDate(nextRenewal) : isCredential(sub) ? "Credential · no renewal" : "No renewal date"}
                           </span>
-                          <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] ${sub.status !== "Cancelled" && daysLeft <= 14 ? "text-amber-700 font-semibold" : "text-warm-gray-500"}`}>
-                            {sub.status === "Cancelled" ? "No renewal" : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft} days remaining`}
+                          <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] ${dated && sub.status !== "Cancelled" && daysLeft <= 14 ? "text-amber-700 font-semibold" : "text-warm-gray-500"}`}>
+                            {sub.status === "Cancelled" || !dated ? "No renewal" : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft} days remaining`}
                           </span>
                         </div>
                       </td>
@@ -912,24 +931,33 @@ export default function SubscriptionDirectory({
 
               {/* Renewal Date & Category */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-warm-gray-700 font-semibold mb-1">
-                    Renewal Date <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.renewalDate}
-                    onChange={(e) => setFormData({ ...formData, renewalDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-warm-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-matcha-500"
-                  />
-                </div>
+                {!isCredential(formData) && (
+                  <div>
+                    <label className="block text-warm-gray-700 font-semibold mb-1">
+                      Renewal Date <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.renewalDate}
+                      onChange={(e) => setFormData({ ...formData, renewalDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-warm-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-matcha-500"
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-warm-gray-700 font-semibold mb-1">Category</label>
                   <select
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value as SubscriptionCategory })}
+                    onChange={(e) => {
+                      const category = e.target.value as SubscriptionCategory;
+                      setFormData({
+                        ...formData,
+                        category,
+                        renewalDate: category !== "Credentials" && !formData.renewalDate ? SYSTEM_TODAY : formData.renewalDate
+                      });
+                    }}
                     className="w-full px-3 py-2 border border-warm-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-matcha-500"
                   >
                     {CATEGORIES.map(cat => (
@@ -983,6 +1011,7 @@ export default function SubscriptionDirectory({
               </div>
 
               {/* Auto-renew */}
+              {!isCredential(formData) && (
               <label className={`flex items-center gap-2 ${formData.billingCycle === "One-time" ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
@@ -993,6 +1022,7 @@ export default function SubscriptionDirectory({
                 />
                 <span className="text-warm-gray-700 font-semibold">Renews automatically each billing cycle</span>
               </label>
+              )}
 
               {/* Contact Person */}
               <div>
