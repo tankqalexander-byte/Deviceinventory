@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Subscription, SubscriptionCategory, BillingCycle, SubscriptionStatus } from "../types";
-import { SYSTEM_TODAY, formatFriendlyDate, parseDate } from "../utils";
+import { SYSTEM_TODAY, formatFriendlyDate, parseDate, getTodayDateString } from "../utils";
+import { effectiveRenewalDate } from "../subscriptionDates";
 import { 
   Search, 
   Plus, 
@@ -25,7 +26,8 @@ import {
   Globe, 
   Lock,
   DollarSign,
-  XCircle
+  XCircle,
+  RefreshCw
 } from "lucide-react";
 
 interface SubscriptionDirectoryProps {
@@ -49,7 +51,17 @@ export const BILLING_CYCLES: BillingCycle[] = ["Monthly", "Annual", "Biennially"
 
 export const SUBSCRIPTION_STATUSES: SubscriptionStatus[] = ["Active", "Pending Renewal", "Pending Cancellation", "Paused", "Cancelled"];
 
-const StatusTag = ({ sub }: { sub: Subscription }) => {
+const AutoRenewTag = ({ sub }: { sub: Subscription }) => {
+  if (!sub.autoRenew || sub.status === "Cancelled") return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200">
+      <RefreshCw className="h-3 w-3 shrink-0" />
+      Auto-renews
+    </span>
+  );
+};
+
+const StatusTag = ({ sub, nextRenewal }: { sub: Subscription; nextRenewal: string }) => {
   const status = sub.status || "Active";
   if (status === "Active") return null;
   const base = "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border";
@@ -57,7 +69,7 @@ const StatusTag = ({ sub }: { sub: Subscription }) => {
     return (
       <span className={`${base} bg-rose-50 text-rose-700 border-rose-200`}>
         <XCircle className="h-3 w-3 shrink-0" />
-        Pending cancellation{sub.renewalDate ? ` · cancel by ${formatFriendlyDate(sub.renewalDate)}` : ""}
+        Pending cancellation{nextRenewal ? ` · cancel by ${formatFriendlyDate(nextRenewal)}` : ""}
       </span>
     );
   }
@@ -132,6 +144,10 @@ export default function SubscriptionDirectory({
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
+  // Effective (next) renewal date: auto-renewing subs roll forward; stored date is never modified
+  const todayStr = getTodayDateString();
+  const nextRenewalOf = (sub: Subscription): string => effectiveRenewalDate(sub, todayStr);
+
   // Filter subscriptions
   const filteredSubscriptions = subscriptions.filter(sub => {
     const matchesSearch = 
@@ -143,7 +159,7 @@ export default function SubscriptionDirectory({
 
     const matchesCategory = selectedCategory === "All" || sub.category === selectedCategory;
 
-    const days = getDaysUntilRenewal(sub.renewalDate);
+    const days = getDaysUntilRenewal(nextRenewalOf(sub));
     let matchesRenewal = true;
     const isCancelled = sub.status === "Cancelled";
     if (renewalFilter === "Urgent") {
@@ -161,7 +177,7 @@ export default function SubscriptionDirectory({
 
   // Calculate Metrics
   const totalCount = subscriptions.length;
-  const urgentRenewals = subscriptions.filter(s => s.status !== "Cancelled" && getDaysUntilRenewal(s.renewalDate) <= 14).length;
+  const urgentRenewals = subscriptions.filter(s => s.status !== "Cancelled" && getDaysUntilRenewal(nextRenewalOf(s)) <= 14).length;
   const totalMonthlySpend = subscriptions.reduce((acc, s) => {
     if (!s.cost || s.status === "Cancelled") return acc;
     if (s.billingCycle === "Monthly") return acc + s.cost;
@@ -196,7 +212,8 @@ export default function SubscriptionDirectory({
       cost: 0,
       billingCycle: "Monthly",
       contactPerson: "",
-      status: "Active"
+      status: "Active",
+      autoRenew: false
     });
     setIsModalOpen(true);
   };
@@ -214,7 +231,8 @@ export default function SubscriptionDirectory({
       cost: sub.cost || 0,
       billingCycle: sub.billingCycle || "Monthly",
       contactPerson: sub.contactPerson || "",
-      status: sub.status || "Active"
+      status: sub.status || "Active",
+      autoRenew: !!sub.autoRenew
     });
     setIsModalOpen(true);
   };
@@ -233,10 +251,18 @@ export default function SubscriptionDirectory({
       formattedUrl = "https://" + formattedUrl;
     }
 
-    const payload = {
-      ...formData,
+    const { autoRenew: formAutoRenew, ...restForm } = formData;
+    const autoRenewOn = !!formAutoRenew && formData.billingCycle !== "One-time";
+    const payload: Omit<Subscription, "id"> = {
+      ...restForm,
       url: formattedUrl
     };
+    // Only write autoRenew: true when on; write false only if the record already had the key
+    if (autoRenewOn) {
+      payload.autoRenew = true;
+    } else if (editingSub && "autoRenew" in editingSub) {
+      payload.autoRenew = false;
+    }
 
     if (editingSub) {
       onUpdateSubscription({
@@ -254,7 +280,7 @@ export default function SubscriptionDirectory({
 
   // Export to CSV
   const handleExportCSV = () => {
-    const headers = ["Name", "URL", "Username", "Password", "Renewal Date", "Category", "Cost", "Billing Cycle", "Contact Person", "Remarks", "Status"];
+    const headers = ["Name", "URL", "Username", "Password", "Renewal Date", "Category", "Cost", "Billing Cycle", "Contact Person", "Remarks", "Status", "Next Renewal", "Auto Renew"];
     const rows = subscriptions.map(s => [
       `"${s.name.replace(/"/g, '""')}"`,
       `"${s.url.replace(/"/g, '""')}"`,
@@ -266,7 +292,9 @@ export default function SubscriptionDirectory({
       `"${s.billingCycle || ""}"`,
       `"${(s.contactPerson || "").replace(/"/g, '""')}"`,
       `"${(s.remarks || "").replace(/"/g, '""')}"`,
-      `"${s.status || "Active"}"`
+      `"${s.status || "Active"}"`,
+      `"${nextRenewalOf(s)}"`,
+      `"${s.autoRenew ? "Yes" : "No"}"`
     ]);
 
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
@@ -490,7 +518,8 @@ export default function SubscriptionDirectory({
         /* GRID CARD VIEW */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredSubscriptions.map((sub) => {
-            const daysLeft = getDaysUntilRenewal(sub.renewalDate);
+            const nextRenewal = nextRenewalOf(sub);
+            const daysLeft = getDaysUntilRenewal(nextRenewal);
             const isPasswordVisible = !!visiblePasswords[sub.id];
 
             let badgeColor = "bg-matcha-50 text-matcha-700 border-matcha-200";
@@ -517,7 +546,12 @@ export default function SubscriptionDirectory({
                         {sub.category || "Service Provider"}
                       </span>
                       <h4 className="text-sm font-bold text-warm-gray-900 leading-snug">{sub.name}</h4>
-                      {(sub.status || "Active") !== "Active" && <div className="mt-1"><StatusTag sub={sub} /></div>}
+                      {((sub.status || "Active") !== "Active" || (sub.autoRenew && sub.status !== "Cancelled")) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <StatusTag sub={sub} nextRenewal={nextRenewal} />
+                          <AutoRenewTag sub={sub} />
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       <button
@@ -625,7 +659,7 @@ export default function SubscriptionDirectory({
                 <div className="pt-3 border-t border-warm-gray-100 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-1 text-warm-gray-500">
                     <Calendar className="h-3.5 w-3.5" />
-                    <span>Renew: {formatFriendlyDate(sub.renewalDate)}</span>
+                    <span>Renew: {formatFriendlyDate(nextRenewal)}</span>
                   </div>
 
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border ${badgeColor}`}>
@@ -661,14 +695,20 @@ export default function SubscriptionDirectory({
               </thead>
               <tbody className="divide-y divide-warm-gray-100 text-xs">
                 {filteredSubscriptions.map((sub) => {
-                  const daysLeft = getDaysUntilRenewal(sub.renewalDate);
+                  const nextRenewal = nextRenewalOf(sub);
+            const daysLeft = getDaysUntilRenewal(nextRenewal);
                   const isPasswordVisible = !!visiblePasswords[sub.id];
 
                   return (
                     <tr key={sub.id} className={`hover:bg-warm-gray-50/80 transition-colors ${sub.status === "Cancelled" ? "opacity-60" : ""}`}>
                       <td className="py-3 px-4 font-semibold text-warm-gray-900">
                         {sub.name}
-                        {(sub.status || "Active") !== "Active" && <span className="block mt-1"><StatusTag sub={sub} /></span>}
+                        {((sub.status || "Active") !== "Active" || (sub.autoRenew && sub.status !== "Cancelled")) && (
+                          <span className="mt-1 flex flex-wrap items-center gap-1">
+                            <StatusTag sub={sub} nextRenewal={nextRenewal} />
+                            <AutoRenewTag sub={sub} />
+                          </span>
+                        )}
                         {sub.category && (
                           <span className="block text-[10px] font-normal text-warm-gray-400">
                             {sub.category}
@@ -728,7 +768,7 @@ export default function SubscriptionDirectory({
                       <td className="py-3 px-4">
                         <div className="space-y-0.5">
                           <span className="block text-warm-gray-800 font-medium">
-                            {formatFriendlyDate(sub.renewalDate)}
+                            {formatFriendlyDate(nextRenewal)}
                           </span>
                           <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] ${sub.status !== "Cancelled" && daysLeft <= 14 ? "text-amber-700 font-semibold" : "text-warm-gray-500"}`}>
                             {sub.status === "Cancelled" ? "No renewal" : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft} days remaining`}
@@ -941,6 +981,18 @@ export default function SubscriptionDirectory({
                   ))}
                 </select>
               </div>
+
+              {/* Auto-renew */}
+              <label className={`flex items-center gap-2 ${formData.billingCycle === "One-time" ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+                <input
+                  type="checkbox"
+                  checked={!!formData.autoRenew && formData.billingCycle !== "One-time"}
+                  disabled={formData.billingCycle === "One-time"}
+                  onChange={(e) => setFormData({ ...formData, autoRenew: e.target.checked })}
+                  className="h-4 w-4 rounded border-warm-gray-300 text-matcha-600 focus:ring-matcha-500"
+                />
+                <span className="text-warm-gray-700 font-semibold">Renews automatically each billing cycle</span>
+              </label>
 
               {/* Contact Person */}
               <div>

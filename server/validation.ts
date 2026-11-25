@@ -81,7 +81,7 @@ const validators: Record<CollectionName, (d: Json) => string | null> = {
   subscriptions: (d) =>
     requireKeys(d, ["id", "name", "url", "username", "password", "renewalDate"]) ??
     checks([
-      [Object.keys(d).length <= 12, "too many fields"],
+      [Object.keys(d).length <= 16, "too many fields"],
       [isStr(d.id, 100), "id must be a string ≤ 100 chars"],
       [isStr(d.name, 150), "name must be a string ≤ 150 chars"],
       [isStr(d.url, 500), "url must be a string ≤ 500 chars"],
@@ -94,6 +94,7 @@ const validators: Record<CollectionName, (d: Json) => string | null> = {
       [!has(d, "billingCycle") || isStr(d.billingCycle, 50), "billingCycle must be a string ≤ 50 chars"],
       [!has(d, "contactPerson") || isStr(d.contactPerson, 150), "contactPerson must be a string ≤ 150 chars"],
       [!has(d, "status") || isStr(d.status, 50), "status must be a string ≤ 50 chars"],
+      [!has(d, "autoRenew") || typeof d.autoRenew === "boolean", "autoRenew must be true or false"],
     ]),
 };
 

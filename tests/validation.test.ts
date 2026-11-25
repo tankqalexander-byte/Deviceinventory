@@ -39,3 +39,9 @@ test("Firestore rules' rejected payloads are rejected", () => {
     assert.notEqual(validateWrite(collection, id, JSON.parse(JSON.stringify(body)), existing), null, label);
   }
 });
+
+test("subscriptions accept autoRenew (all 13 fields) and reject a non-boolean", () => {
+  const sub = { id: "s1", name: "Zoom", url: "u", username: "u", password: "p", renewalDate: "2026-12-12", remarks: "", category: "SaaS & Software", cost: 199, billingCycle: "Annual", contactPerson: "", status: "Active", autoRenew: true };
+  assert.equal(validateWrite("subscriptions", "s1", sub, null), null);
+  assert.notEqual(validateWrite("subscriptions", "s1", { ...sub, autoRenew: "yes" }, null), null);
+});

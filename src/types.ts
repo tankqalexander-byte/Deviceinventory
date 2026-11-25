@@ -74,6 +74,7 @@ export interface Subscription {
   billingCycle?: BillingCycle;
   contactPerson?: string;
   status?: SubscriptionStatus;
+  autoRenew?: boolean; // Renews automatically each billing cycle
 }
 
 export type SubscriptionStatus = "Active" | "Pending Renewal" | "Pending Cancellation" | "Cancelled" | "Paused";
