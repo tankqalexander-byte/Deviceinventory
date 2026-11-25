@@ -59,7 +59,7 @@ export interface Device {
 
 export type SubscriptionCategory = "SaaS & Software" | "Cloud Infrastructure" | "Domain & Hosting" | "Telecom & Utilities" | "Security & Identity" | "Other";
 
-export type BillingCycle = "Monthly" | "Annual" | "Quarterly" | "One-time";
+export type BillingCycle = "Monthly" | "Annual" | "Biennially" | "Quarterly" | "One-time";
 
 export interface Subscription {
   id: string;

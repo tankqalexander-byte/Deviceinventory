@@ -44,7 +44,7 @@ export const CATEGORIES: SubscriptionCategory[] = [
   "Other"
 ];
 
-export const BILLING_CYCLES: BillingCycle[] = ["Monthly", "Annual", "Quarterly", "One-time"];
+export const BILLING_CYCLES: BillingCycle[] = ["Monthly", "Annual", "Biennially", "Quarterly", "One-time"];
 
 export default function SubscriptionDirectory({
   subscriptions,
@@ -139,6 +139,7 @@ export default function SubscriptionDirectory({
     if (!s.cost) return acc;
     if (s.billingCycle === "Monthly") return acc + s.cost;
     if (s.billingCycle === "Annual") return acc + (s.cost / 12);
+    if (s.billingCycle === "Biennially") return acc + (s.cost / 24);
     if (s.billingCycle === "Quarterly") return acc + (s.cost / 3);
     return acc;
   }, 0);
