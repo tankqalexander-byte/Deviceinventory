@@ -868,7 +868,6 @@ export default function App() {
                   Admin Hub
                 </span>
               </div>
-              <p className="text-[11px] text-warm-gray-800 font-medium">Team Appliance & Device Loan Management</p>
             </div>
           </div>
 
