@@ -135,6 +135,80 @@ export function applyLoanForm(device: Json | null, staff: Json | null, input: Lo
   return { status: 200, result: "applied", message: `Recorded ${device.name} returned by ${staff.name} on ${input.date}.`, device: updated };
 }
 
+// --- Adding a device that a form mentions but the app doesn't have yet ------
+
+function editDistance(a: string, b: string) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+export interface NewDeviceInput {
+  fileId: string;
+  fileName: string;
+  serialAsWritten: string;
+  modelAsWritten: string; // the "Device Type/ Model" text on the form
+  templateDeviceId: string; // an existing device of the same product to copy name/category/icon/location from
+}
+
+export function validateNewDeviceInput(body: unknown): NewDeviceInput | string {
+  const b = (body ?? {}) as Json;
+  for (const k of ["fileId", "fileName", "serialAsWritten", "modelAsWritten", "templateDeviceId"]) {
+    if (typeof b[k] !== "string" || !b[k].trim() || b[k].length > 200) return `${k} is required (≤ 200 chars)`;
+  }
+  return b as NewDeviceInput;
+}
+
+export type NewDeviceResult =
+  | { status: 200; result: "already_exists"; message: string; deviceId: string }
+  | { status: 201; result: "created"; message: string; deviceId: string; device: Json }
+  | { status: 400 | 404 | 409; result: "rejected" | "conflict"; message: string };
+
+/**
+ * Decide whether a serial from a form may become a new device.
+ * Refuses when the serial is one character away from an existing one (likely a misread or a
+ * typo in the app) — a person must look. Never overwrites anything.
+ */
+export function planNewDevice(devices: Json[], input: NewDeviceInput, newId: string): NewDeviceResult {
+  const serial = input.serialAsWritten.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (serial.length < 6) return { status: 400, result: "rejected", message: `Serial "${input.serialAsWritten}" is too short to add as a device.` };
+
+  const exact = devices.filter((d) => serialMatches(serial, d.serialNumber));
+  if (exact.length === 1) return { status: 200, result: "already_exists", message: `${exact[0].name} (${exact[0].serialNumber}) is already in the app.`, deviceId: exact[0].id };
+  if (exact.length > 1) return { status: 409, result: "conflict", message: `Serial "${input.serialAsWritten}" could be several devices: ${exact.map((d) => d.serialNumber).join(", ")}.` };
+
+  const key = serialKey(serial);
+  const near = devices.filter((d) => {
+    const k = serialKey(d.serialNumber);
+    return k.length >= 4 && editDistance(key, k) <= 1;
+  });
+  if (near.length) {
+    return { status: 409, result: "conflict", message: `Serial "${input.serialAsWritten}" is very close to ${near.map((d) => `${d.name} (${d.serialNumber})`).join(", ")} — probably a misread or a typo in the app, so no device was added.` };
+  }
+
+  const template = devices.find((d) => d.id === input.templateDeviceId);
+  if (!template) return { status: 404, result: "rejected", message: `No template device with id ${input.templateDeviceId}.` };
+
+  const device: Json = {
+    id: newId,
+    name: template.name,
+    model: template.model,
+    serialNumber: serial,
+    category: template.category,
+    status: "available",
+    condition: "Good",
+    purchaseDate: "",
+    location: template.location,
+    image: template.image,
+    notes: `Added automatically from loan form ${input.fileName} (form says "${input.modelAsWritten}"). Please check the name, category, condition and purchase date.`,
+    history: [],
+  };
+  return { status: 201, result: "created", message: `Added ${device.name} (${serial}) to ${device.category}.`, deviceId: newId, device };
+}
+
 /** Other devices whose serial would also match what was written (look-alike collision). */
 export function otherSerialMatches(devices: Json[], deviceId: string, asWritten: string): Json[] {
   return devices.filter((d) => d.id !== deviceId && serialMatches(asWritten, d.serialNumber));

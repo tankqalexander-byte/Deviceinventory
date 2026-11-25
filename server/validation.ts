@@ -107,6 +107,7 @@ export function validateWrite(name: CollectionName, id: string, data: unknown, e
   if (!existing) return d.id === id ? null : "id field must match the URL id";
   // Update rules: id is immutable; device purchaseDate is immutable.
   if (d.id !== existing.id) return "id cannot be changed";
-  if (name === "devices" && d.purchaseDate !== existing.purchaseDate) return "purchaseDate cannot be changed";
+  // A purchase date can be filled in once if it was never recorded (e.g. a device added from a loan form).
+  if (name === "devices" && d.purchaseDate !== existing.purchaseDate && (existing.purchaseDate ?? "") !== "") return "purchaseDate cannot be changed";
   return null;
 }

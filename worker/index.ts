@@ -8,7 +8,7 @@ import type { CollectionName } from "../server/snapshot.ts";
 import { deleteRecord, getRecord, listRecords, putRecord } from "../server/repo.ts";
 import { validateWrite, isValidId } from "../server/validation.ts";
 import { checkAccess, type AccessResult } from "../server/access.ts";
-import { applyLoanForm, otherSerialMatches, buildContext, safeEqualHex, validateInput } from "../server/automation.ts";
+import { applyLoanForm, otherSerialMatches, buildContext, safeEqualHex, validateInput, planNewDevice, validateNewDeviceInput } from "../server/automation.ts";
 import { d1Db, ensureSchema } from "./d1.ts";
 import { ensureImported, ImportPending } from "./import.ts";
 
@@ -167,6 +167,24 @@ async function handleAutomation(req: Request, env: Env, url: URL, db: ReturnType
         const err = validateWrite("devices", input.deviceId, r.device, device);
         if (err) return { status: 422 as const, result: "rejected" as const, message: `Update refused by validation: ${err}` };
         await putRecord(q, "devices", input.deviceId, r.device);
+      }
+      return r;
+    });
+    const { device: _d, ...publicResult } = outcome as any;
+    return json(publicResult, outcome.status);
+  }
+  if (url.pathname === "/api/automation/add-device" && req.method === "POST") {
+    let body: unknown;
+    try { body = await req.json(); } catch { return json({ error: "Malformed JSON" }, 400); }
+    const input = validateNewDeviceInput(body);
+    if (typeof input === "string") return json({ result: "rejected", message: input }, 400);
+    const outcome = await db.tx(async (q) => {
+      const devices = (await listRecords(q, "devices")).map((d) => d.data);
+      const r = planNewDevice(devices, input, `dev-${Date.now()}`);
+      if (r.status === 201) {
+        const err = validateWrite("devices", r.deviceId, r.device, null);
+        if (err) return { status: 400 as const, result: "rejected" as const, message: `New device refused by validation: ${err}` };
+        await putRecord(q, "devices", r.deviceId, r.device);
       }
       return r;
     });

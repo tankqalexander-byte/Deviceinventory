@@ -138,10 +138,12 @@ export default function DeviceDetails({
   const [editLocation, setEditLocation] = useState("");
   const [editCondition, setEditCondition] = useState<DeviceCondition>("Excellent");
   const [editNotes, setEditNotes] = useState("");
+  const [editPurchaseDate, setEditPurchaseDate] = useState("");
 
   useEffect(() => {
     if (device) {
       setEditName(device.name);
+      setEditPurchaseDate("");
       setEditModel(device.model);
       setEditSerialNumber(device.serialNumber);
       setEditCategory(device.category);
@@ -259,12 +261,17 @@ export default function DeviceDetails({
     ? existingDevices.find(d => d.id !== device.id && d.serialNumber.trim().toUpperCase() === cleanEditSerial)
     : null;
 
+  const purchaseDateMissing = !device.purchaseDate;
+  const editPurchaseDateInFuture = purchaseDateMissing && !!editPurchaseDate && editPurchaseDate > getTodayDateString();
+
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editName.trim() || !editModel.trim() || !editSerialNumber.trim()) return;
     if (duplicateEditDevice) return;
+    if (editPurchaseDateInFuture) return;
 
     onEditDevice(device.id, {
+      ...(purchaseDateMissing && editPurchaseDate ? { purchaseDate: editPurchaseDate } : {}),
       name: editName.trim(),
       model: editModel.trim(),
       serialNumber: cleanEditSerial,
@@ -424,6 +431,30 @@ export default function DeviceDetails({
                 </div>
               </div>
 
+              {purchaseDateMissing && (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-warm-gray-800 block">Purchase date</label>
+                  <input
+                    type="date"
+                    value={editPurchaseDate}
+                    onChange={(e) => setEditPurchaseDate(e.target.value)}
+                    max={getTodayDateString()}
+                    className={`w-full text-xs p-2 rounded-lg border text-warm-gray-900 focus:outline-none focus:ring-1 ${
+                      editPurchaseDateInFuture
+                        ? 'border-rose-400 bg-rose-50/30 focus:ring-rose-500'
+                        : 'border-warm-gray-200 bg-white focus:ring-matcha-500'
+                    }`}
+                  />
+                  <p className="text-[10px] text-warm-gray-600">Not recorded yet. It can only be set once.</p>
+                  {editPurchaseDateInFuture && (
+                    <p className="text-[10px] text-rose-600 mt-0.5 font-medium flex items-center gap-1 animate-in fade-in">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>Purchase date cannot be in the future.</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[11px] font-semibold text-warm-gray-800 block">Location</label>
@@ -529,9 +560,13 @@ export default function DeviceDetails({
                 </div>
                 <div className="space-y-1">
                   <span className="text-warm-gray-800 block">Acquisition Date</span>
-                  <span className="font-semibold text-warm-gray-900">
-                    {formatFriendlyDate(device.purchaseDate)}
-                  </span>
+                  {device.purchaseDate ? (
+                    <span className="font-semibold text-warm-gray-900">
+                      {formatFriendlyDate(device.purchaseDate)}
+                    </span>
+                  ) : (
+                    <span className="text-warm-gray-500 italic">Not recorded</span>
+                  )}
                 </div>
                 {device.notes && (
                   <div className="col-span-2 space-y-1 mt-1">

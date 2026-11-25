@@ -87,7 +87,7 @@ export function exportDevicesToCSV(devices: Device[]): string {
       d.category,
       d.status,
       d.condition,
-      d.purchaseDate,
+      d.purchaseDate || "",
       d.location,
       d.image,
       d.notes || "",

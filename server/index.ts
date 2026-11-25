@@ -13,7 +13,7 @@ import { deleteRecord, getRecord, listRecords, putRecord } from "./repo.ts";
 import { validateWrite, isValidId } from "./validation.ts";
 import { checkAccess } from "./access.ts";
 import { createHash } from "node:crypto";
-import { applyLoanForm, otherSerialMatches, buildContext, safeEqualHex, validateInput } from "./automation.ts";
+import { applyLoanForm, otherSerialMatches, buildContext, safeEqualHex, validateInput, planNewDevice, validateNewDeviceInput } from "./automation.ts";
 import type { CollectionName } from "./snapshot.ts";
 import firebaseConfig from "../firebase-applet-config.json" with { type: "json" };
 
@@ -107,6 +107,24 @@ async function main() {
           const err = validateWrite("devices", input.deviceId, r.device, device);
           if (err) return { status: 422 as const, result: "rejected" as const, message: `Update refused by validation: ${err}` };
           await putRecord(q, "devices", input.deviceId, r.device);
+        }
+        return r;
+      });
+      const { device: _d, ...publicResult } = outcome as any;
+      res.status(outcome.status).json(publicResult);
+    } catch (e) { next(e); }
+  });
+  automation.post("/add-device", async (req, res, next) => {
+    const input = validateNewDeviceInput(req.body);
+    if (typeof input === "string") return res.status(400).json({ result: "rejected", message: input });
+    try {
+      const outcome = await db.tx(async (q) => {
+        const devices = (await listRecords(q, "devices")).map((d) => d.data);
+        const r = planNewDevice(devices, input, `dev-${Date.now()}`);
+        if (r.status === 201) {
+          const err = validateWrite("devices", r.deviceId, r.device, null);
+          if (err) return { status: 400 as const, result: "rejected" as const, message: `New device refused by validation: ${err}` };
+          await putRecord(q, "devices", r.deviceId, r.device);
         }
         return r;
       });
