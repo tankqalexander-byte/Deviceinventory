@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Device, DeviceStatus, DeviceCondition, StaffMember, Subscription, LoanRecord, EmploymentStatus, EMPLOYMENT_STATUSES } from "./types";
 import { INITIAL_DEVICES, INITIAL_SUBSCRIPTIONS, STAFF_MEMBERS } from "./data";
 import DeviceTable from "./components/DeviceTable";
@@ -740,7 +740,13 @@ export default function App() {
   });
 
   // --- 5. STAFF DATA FILTERING & METRICS ---
-  const filteredStaff = staffMembers.filter((staff) => {
+  // Display-only alphabetical order; `staffMembers` itself is never reordered.
+  const sortedStaff = useMemo(
+    () => [...staffMembers].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base", numeric: true })),
+    [staffMembers]
+  );
+
+  const filteredStaff = sortedStaff.filter((staff) => {
     const matchesSearch = 
       staff.name.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
       staff.email.toLowerCase().includes(staffSearchQuery.toLowerCase());
@@ -1370,7 +1376,7 @@ export default function App() {
             <DeviceDetails
               device={selectedDevice}
               existingDevices={devices}
-              staffMembers={staffMembers}
+              staffMembers={sortedStaff}
               categories={categories}
               departments={departments}
               isSuperAdmin={isSuperAdmin}
@@ -1422,7 +1428,7 @@ export default function App() {
         triggerToast={triggerToast}
         onResetPreset={handleResetData}
         onClearDatabase={handleClearAllData}
-        staffMembers={staffMembers}
+        staffMembers={sortedStaff}
         setStaffMembers={setStaffMembers}
         departments={departments}
         setDepartments={setDepartments}
