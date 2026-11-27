@@ -30,7 +30,9 @@ import {
   AlertCircle,
   KeyRound,
   Briefcase,
-  Edit2
+  Edit2,
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 import { auth, signInWithGoogle, logoutUser } from "./firebase";
 import {
@@ -252,6 +254,7 @@ export default function App() {
   const [staffSearchQuery, setStaffSearchQuery] = useState("");
   const [staffSelectedDept, setStaffSelectedDept] = useState("All");
   const [staffSelectedEmploymentStatus, setStaffSelectedEmploymentStatus] = useState<string>("All");
+  const [staffOffboardedExpanded, setStaffOffboardedExpanded] = useState(false);
 
   // Modal control
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -758,6 +761,15 @@ export default function App() {
     return matchesSearch && matchesDept && matchesEmploymentStatus;
   });
 
+  const currentStaff = filteredStaff.filter((s) => s.employmentStatus !== "Offboarded");
+  const offboardedStaff = filteredStaff.filter((s) => s.employmentStatus === "Offboarded");
+  const totalCurrentStaff = staffMembers.filter((s) => s.employmentStatus !== "Offboarded").length;
+  const totalOffboardedStaff = staffMembers.length - totalCurrentStaff;
+  const offboardedWithLoans = offboardedStaff.filter((s) =>
+    devices.some((d) => d.status === "loaned" && d.currentLoan?.userId === s.id)
+  ).length;
+  const showOffboardedList = staffOffboardedExpanded || staffSelectedEmploymentStatus === "Offboarded";
+
   const totalActiveLoans = devices.filter((d) => d.status === "loaned").length;
   const totalOverdueLoans = devices.filter((d) => {
     if (d.status !== "loaned" || !d.currentLoan) return false;
@@ -969,7 +981,7 @@ export default function App() {
             <Users className="h-4 w-4 text-matcha-700" />
             <span>Borrower Directory</span>
             <span className="bg-warm-gray-100 text-warm-gray-800 px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0">
-              {staffMembers.length}
+              {totalCurrentStaff}
             </span>
           </button>
           <button
@@ -1121,7 +1133,10 @@ export default function App() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-[10px] uppercase tracking-wider font-bold text-warm-gray-800">Total Registered Borrowers</p>
-                  <p className="text-xl font-bold text-warm-gray-950 leading-tight mt-0.5">{staffMembers.length}</p>
+                  <p className="text-xl font-bold text-warm-gray-950 leading-tight mt-0.5">{totalCurrentStaff}</p>
+                  {totalOffboardedStaff > 0 && (
+                    <p className="text-[10px] text-warm-gray-700 mt-0.5">+ {totalOffboardedStaff} offboarded</p>
+                  )}
                 </div>
               </div>
               <div className="bg-white border border-matcha-100 rounded-2xl p-4 shadow-xs flex items-center gap-3">
@@ -1207,19 +1222,8 @@ export default function App() {
             </div>
 
             {/* Registered Staff Feed Grid */}
-            {filteredStaff.length === 0 ? (
-              <div className="text-center py-12 px-4 bg-white border border-matcha-100 rounded-2xl">
-                <p className="text-sm text-warm-gray-800">No staff members match your search criteria or filter selection.</p>
-                <button 
-                  onClick={() => { setStaffSearchQuery(""); setStaffSelectedDept("All"); setStaffSelectedEmploymentStatus("All"); }}
-                  className="mt-3 text-xs font-semibold text-matcha-700 underline cursor-pointer"
-                >
-                  Reset filters and show all registered staff
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {filteredStaff.map((staff) => {
+            {(() => {
+              const renderStaffCard = (staff: StaffMember, offboarded: boolean) => {
                   // Filter out active loans of this staff
                   const activeLoans = devices.filter(
                     (d) => d.status === "loaned" && d.currentLoan?.userId === staff.id
@@ -1234,6 +1238,8 @@ export default function App() {
                     <div 
                       key={staff.id} 
                       className={`bg-white border rounded-2xl p-4 shadow-xs flex flex-col justify-between transition-all duration-200 hover:shadow-md ${
+                        offboarded ? "opacity-75" : ""
+                      } ${
                         isOverdue 
                           ? "border-rose-250 hover:border-rose-350 bg-rose-50/10" 
                           : "border-matcha-100/70 hover:border-matcha-250 bg-white"
@@ -1297,6 +1303,12 @@ export default function App() {
                           <p className="text-[10px] font-bold uppercase tracking-wider text-warm-gray-800 mb-2 font-display">
                             Active Loan Status ({activeLoans.length})
                           </p>
+                          {offboarded && activeLoans.length > 0 && (
+                            <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2 flex items-center gap-1.5">
+                              <AlertCircle className="h-3 w-3 text-amber-600 shrink-0" />
+                              <span>Still has {activeLoans.length} device{activeLoans.length === 1 ? "" : "s"} on loan</span>
+                            </p>
+                          )}
                           
                           {activeLoans.length === 0 ? (
                             <div className="flex items-center gap-1.5 p-2 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-xl text-[11px] font-medium leading-none">
@@ -1345,9 +1357,54 @@ export default function App() {
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            )}
+              };
+              const gridCls = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4";
+              if (currentStaff.length === 0 && offboardedStaff.length === 0) {
+                return (
+                  <div className="text-center py-12 px-4 bg-white border border-matcha-100 rounded-2xl">
+                    <p className="text-sm text-warm-gray-800">No staff members match your search criteria or filter selection.</p>
+                    <button 
+                      onClick={() => { setStaffSearchQuery(""); setStaffSelectedDept("All"); setStaffSelectedEmploymentStatus("All"); }}
+                      className="mt-3 text-xs font-semibold text-matcha-700 underline cursor-pointer"
+                    >
+                      Reset filters and show all registered staff
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <>
+                  {currentStaff.length > 0 && (
+                    <div className={gridCls}>
+                      {currentStaff.map((staff) => renderStaffCard(staff, false))}
+                    </div>
+                  )}
+                  {offboardedStaff.length > 0 && (
+                    <section className="space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => setStaffOffboardedExpanded((v) => !v)}
+                        aria-expanded={showOffboardedList}
+                        className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-warm-gray-800 hover:text-warm-gray-950 cursor-pointer"
+                      >
+                        {showOffboardedList ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <span>Offboarded staff ({offboardedStaff.length})</span>
+                        {offboardedWithLoans > 0 && (
+                          <span className="normal-case tracking-normal font-semibold text-amber-700">
+                            ({offboardedWithLoans} with devices still on loan)
+                          </span>
+                        )}
+                      </button>
+                      {showOffboardedList && (
+                        <div className={gridCls}>
+                          {offboardedStaff.map((staff) => renderStaffCard(staff, true))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+                </>
+              );
+            })()}
           </div>
         ) : (
           <div className="flex flex-col gap-6 flex-1 w-full animate-in fade-in duration-300">

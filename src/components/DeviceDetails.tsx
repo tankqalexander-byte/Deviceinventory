@@ -55,6 +55,11 @@ interface DeviceDetailsProps {
   onDeleteDevice: (deviceId: string) => void;
 }
 
+// First non-offboarded staff member; falls back to the first member only if everyone is offboarded.
+function pickDefaultStaffId(staff: StaffMember[]): string {
+  return (staff.find((s) => s.employmentStatus !== "Offboarded") || staff[0])?.id || "new";
+}
+
 export default function DeviceDetails({
   device,
   existingDevices = [],
@@ -122,7 +127,7 @@ export default function DeviceDetails({
   const [pinError, setPinError] = useState<boolean>(false);
   
   // Checkout Form State
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(staffMembers[0]?.id || "new");
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(pickDefaultStaffId(staffMembers));
   const [startDate, setStartDate] = useState<string>(SYSTEM_TODAY);
   const [newBorrowerName, setNewBorrowerName] = useState("");
   const [newBorrowerEmail, setNewBorrowerEmail] = useState("");
@@ -156,7 +161,7 @@ export default function DeviceDetails({
 
   useEffect(() => {
     if (staffMembers && staffMembers.length > 0 && !selectedStaffId) {
-      setSelectedStaffId(staffMembers[0].id);
+      setSelectedStaffId(pickDefaultStaffId(staffMembers));
     }
   }, [staffMembers, selectedStaffId]);
   const [endDate, setEndDate] = useState<string>(() => {
@@ -741,11 +746,27 @@ export default function DeviceDetails({
                         className="w-full text-xs p-2 rounded-lg border border-warm-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-matcha-500 font-medium"
                         required
                       >
-                        {staffMembers.map((staff) => (
-                          <option key={staff.id} value={staff.id}>
-                            {staff.name} ({staff.department} · {staff.employmentStatus || "Full-Time"})
-                          </option>
-                        ))}
+                        {(() => {
+                          // Offboarded people stay visible/selectable only if they hold this device's loan or are the current value.
+                          const isKept = (s: StaffMember) =>
+                            s.employmentStatus !== "Offboarded" || s.id === device.currentLoan?.userId || s.id === selectedStaffId;
+                          const label = (s: StaffMember) => `${s.name} (${s.department} · ${s.employmentStatus || "Full-Time"})`;
+                          const offboardedBlocked = staffMembers.filter((s) => !isKept(s));
+                          return (
+                            <>
+                              {staffMembers.filter(isKept).map((staff) => (
+                                <option key={staff.id} value={staff.id}>{label(staff)}</option>
+                              ))}
+                              {offboardedBlocked.length > 0 && (
+                                <optgroup label="Offboarded staff">
+                                  {offboardedBlocked.map((staff) => (
+                                    <option key={staff.id} value={staff.id} disabled>{label(staff)}</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </>
+                          );
+                        })()}
                         <option value="new">➕ Register & Checkout to New Borrower...</option>
                       </select>
                       {selectedStaffId !== "new" && (() => {

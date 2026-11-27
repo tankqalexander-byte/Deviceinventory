@@ -17,7 +17,9 @@ import {
   Building,
   Download,
   Upload,
-  ShieldCheck
+  ShieldCheck,
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 import { Device, StaffMember, EmploymentStatus, EMPLOYMENT_STATUSES } from "../types";
 import { getEmploymentStatusMeta } from "../utils";
@@ -71,6 +73,7 @@ export default function SettingsModal({
   superAdminPin = "admin123",
   setSuperAdminPin
 }: SettingsModalProps) {
+  const [offboardedExpanded, setOffboardedExpanded] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -925,7 +928,7 @@ export default function SettingsModal({
                     </div>
                   ) : (
                     <div className="divide-y divide-warm-gray-100">
-                      {staffMembers.map((staff) => (
+                      {(() => { const renderRow = (staff: StaffMember) => (
                         editingStaffId === staff.id ? (
                           /* Inline Editing View for User */
                           <div key={staff.id} className="p-3 bg-warm-gray-50/50 text-xs text-warm-gray-900 space-y-2.5">
@@ -1051,7 +1054,32 @@ export default function SettingsModal({
                             </div>
                           </div>
                         )
-                      ))}
+                      ); const offboardedList = staffMembers.filter((s) => s.employmentStatus === "Offboarded");
+                      const currentList = staffMembers.filter((s) => s.employmentStatus !== "Offboarded");
+                      const showOffboarded = offboardedExpanded || offboardedList.some((s) => s.id === editingStaffId);
+                      return (
+                        <>
+                          {currentList.map(renderRow)}
+                          {offboardedList.length > 0 && (
+                            <div className="bg-warm-gray-50/40">
+                              <button
+                                type="button"
+                                onClick={() => setOffboardedExpanded((v) => !v)}
+                                aria-expanded={showOffboarded}
+                                className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-warm-gray-800 hover:bg-warm-gray-100/60 cursor-pointer"
+                              >
+                                {showOffboarded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                Offboarded staff ({offboardedList.length})
+                              </button>
+                              {showOffboarded && (
+                                <div className="divide-y divide-warm-gray-100 border-t border-warm-gray-100 opacity-75">
+                                  {offboardedList.map(renderRow)}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ); })()}
                     </div>
                   )}
                 </div>
